@@ -1,3 +1,6 @@
 [submodule "components/wolfssl"]
 	path = components/wolfssl
 	url = https://github.com/younghyunjo/wolfssl.git
+[submodule "components/arduino"]
+	path = components/arduino
+	url = https://github.com/espressif/arduino-esp32.git
