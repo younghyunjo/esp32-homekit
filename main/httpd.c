@@ -1,19 +1,24 @@
 #include <esp_log.h>
 #include <esp_task_wdt.h>
 
-#include "tlv.h"
 #include "mongoose.h"
+
+#include "httpd.h"
+#include "pairing.h"
+#include "tlv.h"
+#include "hap.h"
 
 #define TAG "HTTPD"
 
-static void mg_ev_handler(struct mg_connection* nc, int ev, void *p) {
-    static const char *reply_fmt =
-        "HTTP/1.0 200 OK\r\n"
-        "Connection: close\r\n"
-        "Content-Type: text/plain\r\n"
-        "\r\n"
-        "Hello %s\n";
+struct httpd_desc {
+    int nr_restapi;
+    struct httpd_restapi* restapi;
+};
+static struct httpd_desc _httpd = {
+    .nr_restapi = 0
+};
 
+static void mg_ev_handler(struct mg_connection* nc, int ev, void *p) {
     switch (ev) {
         case MG_EV_ACCEPT: {
           char addr[32];
@@ -27,29 +32,36 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p) {
           struct http_message *hm = (struct http_message *) p;
           mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
                               MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
+
+#if 1
           printf("HTTP request from %s: %.*s %.*s\n", addr, (int) hm->method.len,
                  hm->method.p, (int) hm->uri.len, hm->uri.p);
+#endif
+          //printf("%.*s\n", (int)hm->message.len, (char*)hm->message.p);
 
-          if (strncmp("/pair-setup", hm->uri.p, hm->uri.len) == 0) {
-              for (int i=0; i<hm->body.len; i++) {
-                  printf("%x ", hm->body.p[i]);
+          for (int i=0; i<_httpd.nr_restapi; i++) {
+              if (strncasecmp(_httpd.restapi[i].uri, hm->uri.p, hm->uri.len) == 0 &&
+                  strncasecmp(_httpd.restapi[i].method, hm->method.p, hm->method.len) == 0) {
+
+                  char* res_header = NULL;
+                  char* res_body = NULL;
+                  int body_len = 0;
+                  _httpd.restapi[i].ops((char*)hm->body.p, hm->body.len, &res_header, &res_body, &body_len);
+
+                  if (res_header) {
+                      mg_printf(nc, "%s", res_header);
+                  }
+
+#if 1
+                  if (res_body) {
+                      mg_send(nc, res_body, body_len);
+                  }
+#endif
+                  _httpd.restapi[i].post_response(res_header, res_body);
+                  //nc->flags |= MG_F_SEND_AND_CLOSE;
+                  break;
               }
-
-              printf("\n");
-
-              //struct tlv* i1 = tlv_item_get(hm->body.p, hm->body.len, 0);
-              //printf("%x\n", i1->value[0]);
-              //struct tlv* i2 = tlv_item_get(hm->body.p, hm->body.len, 6);
-              //printf("%x\n", i2->value[0]);
-
-              //tlv_item_free(i1);
-              //tlv_item_free(i2);
           }
-
-          //mg_printf(nc, reply_fmt, addr);
-          nc->flags |= MG_F_SEND_AND_CLOSE;
-
-
           break;
         }
         case MG_EV_CLOSE: {
@@ -79,6 +91,14 @@ static void _httpd_task(void* arg) {
     }
 }
 
-void httpd_start(int port) {
-    xTaskCreate(_httpd_task, "httpd_task", 1024*8, port, 5, NULL);
+void httpd_start(int port, struct httpd_restapi* api, int nr_restapi) {
+    _httpd.restapi = malloc(sizeof(struct httpd_restapi) * nr_restapi);
+    if (_httpd.restapi == NULL) {
+        ESP_LOGE(TAG, "malloc failed\n");
+        return;
+    }
+    memcpy(_httpd.restapi, api, sizeof(struct httpd_restapi) * nr_restapi);
+    _httpd.nr_restapi = nr_restapi;
+    xTaskCreate(_httpd_task, "httpd_task", 1024*8, (void*)port, 5, NULL);
+    ESP_LOGI(TAG, "STARTED\n");
 }
