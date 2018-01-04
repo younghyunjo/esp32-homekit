@@ -38,7 +38,7 @@ int discovery_init(const char* host, const int port, const char* model_name,
 
     const char* hap_service_txt[] = {
         service_txt_c_sharp,
-        "ff=1",
+        "ff=0",
         service_txt_id,
         service_txt_md,
         "s#=1",
