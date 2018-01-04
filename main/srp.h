@@ -1,26 +1,46 @@
-#ifndef _SRP_H_
-#define _SRP_H_
+#ifndef _HSRP_H_
+#define _HSRP_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define SRP_SALT_LENGTH 16
-#define SRP_PUBLICH_KEY_LENGTH  384
+#define SRP_PUBLIC_KEY_LENGTH  384
 #define SRP_PROOF_LENGTH    64
 
 int srp_init(const char* setup_code);
-int srp_salt_get(uint8_t salt[SRP_SALT_LENGTH]);
-int srp_publich_key_get(uint8_t key[SRP_PUBLICH_KEY_LENGTH]);
 
-int srp_compute_peer_key(uint8_t key[SRP_PUBLICH_KEY_LENGTH]);
-int srp_peer_proof_verify(uint8_t proof[SRP_PROOF_LENGTH]);
+/*
+ * Make salt
+ */
+uint8_t* srp_salt(void);
+
+/*
+ * Make ESP32 public key. Length is 384
+ */
+uint8_t* srp_B(void);
+
+/*
+ * Set iOS Public key
+ */
+bool srp_A_set(uint8_t* A);
+
+/*
+ * Verify iOS Device proof
+ */
+bool srp_verify(uint8_t* proof);
+
+/*
+ * Return ESP32 proof for iOS Device. Length is 64
+ */
+uint8_t* srp_response(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif //#ifndef _SRP_H_
-
+#endif //#ifndef _HSRP_H_

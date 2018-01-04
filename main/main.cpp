@@ -12,7 +12,7 @@
 #include "hap.h"
 #include "discovery.h"
 #include "httpd.h"
-#include "hap_srp.h"
+#include "srp.h"
 #include "pairing.h"
 
 #include <WiFi.h>
@@ -65,6 +65,6 @@ extern "C" void app_main()
     WiFi.onEvent(WiFiEvent);
     WiFi.begin(EXAMPLE_WIFI_SSID, EXAMPLE_WIFI_PASS);
 
-    hsrp_init("053-58-197");
-    discovery_init("ESP32", 3233, "A", 1, HAP_ACCESSORY_CATEGORY_SENSOR);
+    srp_init("053-58-197");
+    discovery_init("ESP32", 3233, "BC", 2, HAP_ACCESSORY_CATEGORY_LIGHTBULB);
 }

@@ -14,8 +14,9 @@ struct srp_desc {
     Srp srp;
     uint8_t salt[SRP_SALT_LENGTH];
     uint8_t b[32];
-    uint8_t B[SRP_PUBLICH_KEY_LENGTH];
+    uint8_t B[SRP_PUBLIC_KEY_LENGTH];
     uint32_t B_len;
+    uint8_t proof[SRP_PROOF_LENGTH];
 };
 
 static struct srp_desc* s = NULL;
@@ -186,7 +187,7 @@ int srp_init(const char* setup_code)
         printf("\n");
 
         printf("B:\n");
-        for (int i=0; i<SRP_PUBLICH_KEY_LENGTH; i++) {
+        for (int i=0; i<SRP_PUBLIC_KEY_LENGTH; i++) {
             printf("0x%02X ", s->B[i]);
             if (i % 12 == 0) {
                 printf("\n");
@@ -198,43 +199,45 @@ int srp_init(const char* setup_code)
     return 0;
 }
 
-int srp_salt_get(uint8_t salt[SRP_SALT_LENGTH])
+uint8_t* srp_salt(void)
 {
-    if (salt == NULL) {
-        return -1;
-    }
-
-    memcpy(salt, s->salt, SRP_SALT_LENGTH);
-    return 0;
+    return s->salt;
 }
 
-int srp_publich_key_get(uint8_t key[SRP_PUBLICH_KEY_LENGTH])
+uint8_t* srp_B(void)
 {
-    if (key == NULL) {
-        return -1;
-    }
-
-    memcpy(key, s->B, SRP_PUBLICH_KEY_LENGTH);
-    return 0;
+    return s->B;
 }
 
-int srp_compute_peer_key(uint8_t key[SRP_PUBLICH_KEY_LENGTH])
+bool srp_A_set(uint8_t* key)
 {
-    if (wc_SrpComputeKey(&s->srp, key, SRP_PUBLICH_KEY_LENGTH, s->B, s->B_len) < 0) {
+    if (wc_SrpComputeKey(&s->srp, key, SRP_PUBLIC_KEY_LENGTH, s->B, s->B_len) < 0) {
         ESP_LOGE(TAG, "wc_SrpComputeKey failed\n");
-        return -1;
+        return false;
     }
 
-    return 0;
+    return true;
 }
 
-int srp_peer_proof_verify(uint8_t proof[SRP_PROOF_LENGTH])
+bool srp_verify(uint8_t* proof)
 {
     if (wc_SrpVerifyPeersProof(&s->srp, proof, SRP_PROOF_LENGTH) < 0) {
         ESP_LOGE(TAG, "wc_SrpVerifyPeersProof failed\n");
-        return -1;
+        return false;
     }
 
-    return 0;
+    return true;
+}
+
+uint8_t* srp_response(void)
+{
+    uint32_t size = SRP_PROOF_LENGTH;
+    int err = wc_SrpGetProof(&s->srp, s->proof, &size);
+    if (err < 0) {
+        ESP_LOGE(TAG, "wc_SrpGetProof failed. %d\n", err);
+        return NULL;
+    }
+
+    return s->proof;
 }
 

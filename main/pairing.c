@@ -6,7 +6,7 @@
 
 #include "hap.h"
 #include "tlv.h"
-#include "hap_srp.h"
+#include "srp.h"
 
 #define DEBUG
 
@@ -23,20 +23,25 @@ static int _pairing_setup_m4(char* req_body, int req_body_length,
     int error = 0;
     struct tlv* A = tlv_decode((uint8_t*)req_body, req_body_length, 
             HAP_TLV_TYPE_PUBLICKEY);
-    hsrp_verify_A(&A->value, A->length);
+    srp_A_set((uint8_t*)&A->value);
     tlv_decoded_item_free(A);
 
     struct tlv* proof = tlv_decode((uint8_t*)req_body, req_body_length, 
             HAP_TLV_TYPE_PROOF);
-    int authenticated = hsrp_verify_session(&proof->value);
+    bool authenticated = srp_verify((uint8_t*)&proof->value);
     tlv_decoded_item_free(proof);
 
-    if (authenticated == 0) {
+    if (authenticated == false) {
         printf("AUTH FAILED\n");
         return 500;
     }
 
-    uint8_t* accessory_proof = hsrp_hamk();
+    uint8_t* accessory_proof = srp_response();
+    if (accessory_proof == NULL) {
+        printf("ACC PROOF NULL\n");
+        return 500;
+    }
+
     int res_body_length = 30;
 
     uint8_t state[] = {0x04};
@@ -94,8 +99,8 @@ static int _pairing_setup_m2(char* req_body, int req_body_length,
 
     uint8_t state[] = {0x02};
     res_body_length += tlv_encode_length(sizeof(state));
-    res_body_length += tlv_encode_length(HSRP_B_LENGTH);
-    res_body_length += tlv_encode_length(HSRP_SALT_LENGTH);
+    res_body_length += tlv_encode_length(SRP_PUBLIC_KEY_LENGTH);
+    res_body_length += tlv_encode_length(SRP_SALT_LENGTH);
 
 #ifdef DEBUG
     printf("[PAIRING]m2 response body length:%d\n", res_body_length);
@@ -108,17 +113,17 @@ static int _pairing_setup_m2(char* req_body, int req_body_length,
     }
     memset(*res_body, 0, res_body_length);
 
-    uint8_t* salt = hsrp_salt();
-    uint8_t* B = hsrp_B();
+    uint8_t* salt = srp_salt();
+    uint8_t* B = srp_B();
 
     uint8_t* tlv_encode_ptr = (uint8_t*)(*res_body);
 
-    tlv_encode_ptr += sprintf((char*)tlv_encode_ptr, "%lX\r\n", (unsigned long)tlv_encode_length(HSRP_SALT_LENGTH));
-    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_SALT, HSRP_SALT_LENGTH, salt, tlv_encode_ptr);
+    tlv_encode_ptr += sprintf((char*)tlv_encode_ptr, "%lX\r\n", (unsigned long)tlv_encode_length(SRP_SALT_LENGTH));
+    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_SALT, SRP_SALT_LENGTH, salt, tlv_encode_ptr);
     tlv_encode_ptr += sprintf((char*)tlv_encode_ptr, "\r\n");
 
-    tlv_encode_ptr += sprintf((char*)tlv_encode_ptr, "%lX\r\n", (unsigned long)tlv_encode_length(HSRP_B_LENGTH));
-    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_PUBLICKEY, HSRP_B_LENGTH, B, tlv_encode_ptr);
+    tlv_encode_ptr += sprintf((char*)tlv_encode_ptr, "%lX\r\n", (unsigned long)tlv_encode_length(SRP_PUBLIC_KEY_LENGTH));
+    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_PUBLICKEY, SRP_PUBLIC_KEY_LENGTH, B, tlv_encode_ptr);
     tlv_encode_ptr += sprintf((char*)tlv_encode_ptr, "\r\n");
 
 
@@ -186,6 +191,9 @@ int pairing_setup(char* req_body, int req_body_length,
                 res_header, res_body, body_len);
     case 0x03:
         return _pairing_setup_m4(req_body, req_body_length,
+                res_header, res_body, body_len);
+    case 0x05:
+        return _pairing_setup_m6(req_body, req_body_length,
                 res_header, res_body, body_len);
     default:
         return 500;
