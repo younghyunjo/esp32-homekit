@@ -241,3 +241,7 @@ uint8_t* srp_response(void)
     return s->proof;
 }
 
+uint8_t* srp_session_key(void)
+{
+    return s->srp.key;
+}

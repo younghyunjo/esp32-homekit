@@ -1,5 +1,5 @@
-#ifndef _HSRP_H_
-#define _HSRP_H_
+#ifndef _SRP_H_
+#define _SRP_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,6 +11,7 @@ extern "C" {
 #define SRP_SALT_LENGTH 16
 #define SRP_PUBLIC_KEY_LENGTH  384
 #define SRP_PROOF_LENGTH    64
+#define SRP_SESSION_KEY_LENGTH  64
 
 int srp_init(const char* setup_code);
 
@@ -39,8 +40,10 @@ bool srp_verify(uint8_t* proof);
  */
 uint8_t* srp_response(void);
 
+uint8_t* srp_session_key(void);
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif //#ifndef _HSRP_H_
+#endif //#ifndef _SRP_H_
