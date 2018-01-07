@@ -19,12 +19,12 @@
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
-//#define EXAMPLE_WIFI_SSID "YOUNGHYUN1"
-//#define EXAMPLE_WIFI_PASS "coldplay"
+#define EXAMPLE_WIFI_SSID "YOUNGHYUN1"
+#define EXAMPLE_WIFI_PASS "coldplay"
 //#define EXAMPLE_WIFI_SSID "unibj"
 //#define EXAMPLE_WIFI_PASS "12673063"
-#define EXAMPLE_WIFI_SSID "NO_RUN"
-#define EXAMPLE_WIFI_PASS "1qaz2wsx"
+//#define EXAMPLE_WIFI_SSID "NO_RUN"
+//#define EXAMPLE_WIFI_PASS "1qaz2wsx"
 
 /* FreeRTOS event group to signal when we are connected & ready to make a request */
 static EventGroupHandle_t wifi_event_group;
@@ -35,8 +35,8 @@ static EventGroupHandle_t wifi_event_group;
 const int CONNECTED_BIT = BIT0;
 
 struct httpd_restapi restapi[] {
-    {.uri = "/pair-setup",
-     .method = "POST",
+    {.uri = (char*)"/pair-setup",
+     .method = (char*)"POST",
      .ops = pairing_setup,
      .post_response = pairing_setup_free,
     },
@@ -65,6 +65,11 @@ extern "C" void app_main()
     WiFi.onEvent(WiFiEvent);
     WiFi.begin(EXAMPLE_WIFI_SSID, EXAMPLE_WIFI_PASS);
 
-    srp_init("053-58-197");
-    discovery_init("ESP32", 3233, "BC", 2, HAP_ACCESSORY_CATEGORY_LIGHTBULB);
+    uint8_t mac[6];
+    esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
+    char accessory_id[32] = {0,};
+    sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    pairing_init(accessory_id, "053-58-197");
+    discovery_init("ESP32", 3233, "A", 3, HAP_ACCESSORY_CATEGORY_PROGRAMMABLE_SWITCH);
 }
