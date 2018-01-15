@@ -33,10 +33,8 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p) {
           mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
                               MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
 
-#if 1
           printf("HTTP request from %s: %.*s %.*s\n", addr, (int) hm->method.len,
                  hm->method.p, (int) hm->uri.len, hm->uri.p);
-#endif
           //printf("%.*s\n", (int)hm->message.len, (char*)hm->message.p);
 
           for (int i=0; i<_httpd.nr_restapi; i++) {
@@ -45,27 +43,38 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p) {
 
                   char* res_header = NULL;
                   char* res_body = NULL;
+                  int res_header_len = 0;
                   int body_len = 0;
-                  _httpd.restapi[i].ops((char*)hm->body.p, hm->body.len, &res_header, &res_body, &body_len);
+                  _httpd.restapi[i].ops((char*)hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
 
                   if (res_header) {
-                      mg_printf(nc, "%s", res_header);
+                      mg_send(nc, res_header, res_header_len);
                   }
 
-#if 1
                   if (res_body) {
                       mg_send(nc, res_body, body_len);
                   }
-#endif
+
                   _httpd.restapi[i].post_response(res_header, res_body);
-                  //nc->flags |= MG_F_SEND_AND_CLOSE;
+                  //nc->flags |= MG_F_ENABLE_BROADCAST;
                   break;
               }
           }
           break;
         }
+        case MG_EV_RECV: {
+          break;
+        }
+
+        case MG_EV_POLL: {
+          break;
+        }
         case MG_EV_CLOSE: {
           printf("Connection %p closed\n", nc);
+          break;
+        }
+        default: {
+          printf("[HTTPD] DEFAULT:%d\n", ev);
           break;
         }
     }
@@ -102,3 +111,6 @@ void httpd_start(int port, struct httpd_restapi* api, int nr_restapi) {
     xTaskCreate(_httpd_task, "httpd_task", 1024*8, (void*)port, 5, NULL);
     ESP_LOGI(TAG, "STARTED\n");
 }
+
+
+

@@ -10,9 +10,10 @@ struct httpd_restapi {
     char* method;
 
     int (*ops)(char* req_body, int req_body_len, 
-            char** res_header, char** res_body, int* body_len);
+            char** res_header, int* req_header_len, char** res_body, int* body_len);
 
     void (*post_response)(char* res_header, char* res_body);
+    void* user_arg;
 };
 
 void httpd_start(int port, struct httpd_restapi* api, int nr_restapi);
