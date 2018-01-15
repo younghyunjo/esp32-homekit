@@ -1,5 +1,5 @@
-#ifndef _PAIRING_H_
-#define _PAIRING_H_
+#ifndef _PAIR_H_
+#define _PAIR_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,14 +11,16 @@ struct pair_db_ops {
     int (*erase)(char* key);
 };
 
-int pairing_setup(char* req_body, int req_body_len,
-        char** res_header, char** res_body, int* body_len);
-void pairing_setup_free(char* res_header, char* res_body);
+int pairing_over_ip(
+        char* req_body, int req_body_length, 
+        char** res_header, int* res_header_len, char** res_body, int* res_body_len);
+void pairing_over_ip_free(char* res_header, char*res_body);
 
-void pairing_init(char* accessory_id, char* setup_code);
+int pairing_init(char* setup_code, char* acc_id, struct pair_db_ops* ops);
+void pairing_cleanup(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif //#ifndef _PAIRING_H_
+#endif //#ifndef _PAIR_H_
