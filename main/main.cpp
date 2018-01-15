@@ -11,15 +11,15 @@
 #include "Arduino.h"
 #include "hap.h"
 #include "discovery.h"
-#include "httpd.h"
 #include "srp.h"
 #include "pairing.h"
+#include "httpd.h"
 
 #include <WiFi.h>
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
-#define EXAMPLE_WIFI_SSID "YOUNGHYUN1"
+#define EXAMPLE_WIFI_SSID "YOUNGHYUN"
 #define EXAMPLE_WIFI_PASS "coldplay"
 //#define EXAMPLE_WIFI_SSID "unibj"
 //#define EXAMPLE_WIFI_PASS "12673063"
@@ -34,11 +34,11 @@ static EventGroupHandle_t wifi_event_group;
    to the AP with an IP? */
 const int CONNECTED_BIT = BIT0;
 
-struct httpd_restapi restapi[] {
+struct httpd_restapi restapi[] = {
     {.uri = (char*)"/pair-setup",
      .method = (char*)"POST",
-     .ops = pairing_setup,
-     .post_response = pairing_setup_free,
+     .ops = pairing_over_ip,
+     .post_response = pairing_over_ip_free,
     },
 };
 
@@ -67,9 +67,9 @@ extern "C" void app_main()
 
     uint8_t mac[6];
     esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
-    char accessory_id[32] = {0,};
+    char accessory_id[38] = {0,};
     sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-    pairing_init(accessory_id, "053-58-197");
-    discovery_init("ESP32", 3233, "A", 3, HAP_ACCESSORY_CATEGORY_PROGRAMMABLE_SWITCH);
+    accessory_id[8] = 0x3a;
+    pairing_init("053-58-197", accessory_id, NULL);
+    discovery_init("ESP32", 3233, "AD", 6, HAP_ACCESSORY_CATEGORY_OTHER);
 }
