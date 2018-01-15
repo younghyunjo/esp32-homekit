@@ -7,7 +7,9 @@ extern "C" {
 
 #include <stdint.h>
 
-#define ED25519_KEY_LENGTH  32
+#define ED25519_PUBLIC_KEY_LENGTH   32
+#define ED28819_PRIVATE_KEY_LENGTH  64
+#define ED25519_SIGN_LENGTH         64
 
 int ed25519_key_generate(uint8_t public_key[], uint8_t private_key[]);
 int ed25519_verify(uint8_t* public_key, int key_len, 
