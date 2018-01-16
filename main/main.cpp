@@ -14,17 +14,18 @@
 #include "srp.h"
 #include "pairing.h"
 #include "httpd.h"
+#include "nvs.h"
 
 #include <WiFi.h>
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
-#define EXAMPLE_WIFI_SSID "YOUNGHYUN"
-#define EXAMPLE_WIFI_PASS "coldplay"
+//#define EXAMPLE_WIFI_SSID "YOUNGHYUN"
+//#define EXAMPLE_WIFI_PASS "coldplay"
 //#define EXAMPLE_WIFI_SSID "unibj"
 //#define EXAMPLE_WIFI_PASS "12673063"
-//#define EXAMPLE_WIFI_SSID "NO_RUN"
-//#define EXAMPLE_WIFI_PASS "1qaz2wsx"
+#define EXAMPLE_WIFI_SSID "NO_RUN"
+#define EXAMPLE_WIFI_PASS "1qaz2wsx"
 
 /* FreeRTOS event group to signal when we are connected & ready to make a request */
 static EventGroupHandle_t wifi_event_group;
@@ -48,7 +49,7 @@ void WiFiEvent(WiFiEvent_t event)
 
     if (event == SYSTEM_EVENT_STA_GOT_IP) {
         printf("WiFi connected\n");
-        httpd_start(3233, restapi, ARRAY_SIZE(restapi));
+        httpd_start(661, restapi, ARRAY_SIZE(restapi));
     }
     else if (event == SYSTEM_EVENT_STA_DISCONNECTED) {
         Serial.println("WiFi lost connection");
@@ -67,9 +68,15 @@ extern "C" void app_main()
 
     uint8_t mac[6];
     esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
-    char accessory_id[38] = {0,};
+    char accessory_id[32] = {0,};
     sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    accessory_id[8] = 0x3a;
-    pairing_init("053-58-197", accessory_id, NULL);
-    discovery_init("ESP32", 3233, "AD", 6, HAP_ACCESSORY_CATEGORY_OTHER);
+
+    struct pairing_db_ops ops = {
+        .get = nvs_get,
+        .set = nvs_set,
+        .erase = nvs_erase,
+    };
+
+    pairing_init("053-58-197", accessory_id, &ops);
+    discovery_init("ESP32", 661, "KAD", accessory_id, 8, HAP_ACCESSORY_CATEGORY_FAN);
 }
