@@ -14,7 +14,7 @@
 static mdns_server_t* _mdns = NULL;
 
 int discovery_init(const char* host, const int port, const char* model_name,
-        const uint32_t config_number, const enum hap_accessory_category category) {
+        const char* id, const uint32_t config_number, const enum hap_accessory_category category) {
 #define SERVICE_TXT_LEN 64
 
     if (_mdns != NULL) {
@@ -25,10 +25,8 @@ int discovery_init(const char* host, const int port, const char* model_name,
     char service_txt_c_sharp[SERVICE_TXT_LEN] = {0,};
     sprintf(service_txt_c_sharp, "c#=%u", config_number);
 
-    uint8_t mac[6];
-    esp_wifi_get_mac(WIFI_MODE_STA, mac);
     char service_txt_id[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_id, "id=%x:%x:%x:%x:%x:%x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    sprintf(service_txt_id, "id=%s", id);
 
     char service_txt_md[SERVICE_TXT_LEN] = {0,};
     sprintf(service_txt_md, "md=%s", model_name);

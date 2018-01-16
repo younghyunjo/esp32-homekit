@@ -8,7 +8,7 @@ extern "C" {
 #include "hap.h"
 
 int discovery_init(const char* host, const int port, const char* model_name,
-        const uint32_t config_number, const enum hap_accessory_category category);
+        const char* id, const uint32_t config_number, const enum hap_accessory_category category);
 
 #ifdef __cplusplus
 }
