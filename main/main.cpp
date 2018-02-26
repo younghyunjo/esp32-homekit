@@ -12,7 +12,6 @@
 #include "hap.h"
 #include "srp.h"
 #include "pairing.h"
-#include "httpd_old.h"
 #include "nvs.h"
 #include "advertise.h"
 #include "httpd.h"
@@ -21,7 +20,7 @@
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
-#if 1
+#if 0
 #define EXAMPLE_WIFI_SSID "YOUNGHYUN"
 #define EXAMPLE_WIFI_PASS "coldplay"
 #endif
@@ -29,7 +28,7 @@
 #define EXAMPLE_WIFI_SSID "unibj"
 #define EXAMPLE_WIFI_PASS "12673063"
 #endif
-#if 0
+#if 1
 #define EXAMPLE_WIFI_SSID "NO_RUN"
 #define EXAMPLE_WIFI_PASS "1qaz2wsx"
 #endif
