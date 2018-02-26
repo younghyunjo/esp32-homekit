@@ -5,21 +5,19 @@
 extern "C" {
 #endif
 
-struct httpd_restapi {
-    char* uri;
-    char* method;
+#include "mongoose.h"
 
-    int (*ops)(char* req_body, int req_body_len, 
-            char** res_header, int* req_header_len, char** res_body, int* body_len);
-
-    void (*post_response)(char* res_header, char* res_body);
-    void* user_arg;
+struct httpd_ops {
+    void (*accept)(void* user_data, struct mg_connection* nc);
+    void (*close)(void* user_data, struct mg_connection* nc);
+    void (*recv)(void* user_data, struct mg_connection* nc, char* msg, int length);
 };
 
-void httpd_start(int port, struct httpd_restapi* api, int nr_restapi);
+void* httpd_bind(int port, void* user_data);
+void httpd_init(struct httpd_ops* ops);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif //#ifndef _HTTPD_H_
+#endif  //#ifndef _HTTPD_H_

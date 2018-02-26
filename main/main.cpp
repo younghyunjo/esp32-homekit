@@ -10,22 +10,28 @@
 #include "mdns.h"
 #include "Arduino.h"
 #include "hap.h"
-#include "discovery.h"
 #include "srp.h"
 #include "pairing.h"
-#include "httpd.h"
 #include "nvs.h"
+#include "advertise.h"
+#include "httpd.h"
 
 #include <WiFi.h>
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
-//#define EXAMPLE_WIFI_SSID "YOUNGHYUN"
-//#define EXAMPLE_WIFI_PASS "coldplay"
-//#define EXAMPLE_WIFI_SSID "unibj"
-//#define EXAMPLE_WIFI_PASS "12673063"
+#if 0
+#define EXAMPLE_WIFI_SSID "YOUNGHYUN"
+#define EXAMPLE_WIFI_PASS "coldplay"
+#endif
+#if 0
+#define EXAMPLE_WIFI_SSID "unibj"
+#define EXAMPLE_WIFI_PASS "12673063"
+#endif
+#if 1
 #define EXAMPLE_WIFI_SSID "NO_RUN"
 #define EXAMPLE_WIFI_PASS "1qaz2wsx"
+#endif
 
 /* FreeRTOS event group to signal when we are connected & ready to make a request */
 static EventGroupHandle_t wifi_event_group;
@@ -35,13 +41,20 @@ static EventGroupHandle_t wifi_event_group;
    to the AP with an IP? */
 const int CONNECTED_BIT = BIT0;
 
+/*
 struct httpd_restapi restapi[] = {
     {.uri = (char*)"/pair-setup",
      .method = (char*)"POST",
-     .ops = pairing_over_ip,
+     .ops = pairing_over_ip_setup,
+     .post_response = pairing_over_ip_free,
+    },
+    {.uri = (char*)"/pair-verify",
+     .method = (char*)"POST",
+     .ops = pairing_over_ip_verify,
      .post_response = pairing_over_ip_free,
     },
 };
+*/
 
 void WiFiEvent(WiFiEvent_t event)
 {
@@ -49,7 +62,13 @@ void WiFiEvent(WiFiEvent_t event)
 
     if (event == SYSTEM_EVENT_STA_GOT_IP) {
         printf("WiFi connected\n");
-        httpd_start(661, restapi, ARRAY_SIZE(restapi));
+//        advertise_accessory_add("hello", "12:34:11:22:33:44", "vendor", 811, 1, HAP_ACCESSORY_CATEGORY_FAN, ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
+
+        hap_init();
+
+        hap_accessory_callback_t callback;
+        hap_accessory_add("Neell", "10:34:11:22:33:44", "053-58-197", "vendor", HAP_ACCESSORY_CATEGORY_FAN, 811, 1, NULL, &callback);
+        //httpd_start(661, restapi, ARRAY_SIZE(restapi));
     }
     else if (event == SYSTEM_EVENT_STA_DISCONNECTED) {
         Serial.println("WiFi lost connection");
@@ -57,6 +76,7 @@ void WiFiEvent(WiFiEvent_t event)
 
 }
 
+extern void pairing_test(void);
 extern "C" void app_main()
 {
     ESP_ERROR_CHECK( nvs_flash_init() );
@@ -70,13 +90,20 @@ extern "C" void app_main()
     esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
     char accessory_id[32] = {0,};
     sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    printf("|%s|\n", accessory_id);
+    accessory_id[9] = 0x39;
 
+#if 0
     struct pairing_db_ops ops = {
         .get = nvs_get,
         .set = nvs_set,
         .erase = nvs_erase,
     };
+#endif
 
-    pairing_init("053-58-197", accessory_id, &ops);
-    discovery_init("ESP32", 661, "KAD", accessory_id, 8, HAP_ACCESSORY_CATEGORY_FAN);
+
+
+//    pairing_init("053-58-197", accessory_id, &ops);
+//
+//    pairing_test();
 }

@@ -3058,7 +3058,7 @@ struct {								\
 #endif
 
 #ifndef MG_ENABLE_FILESYSTEM
-#define MG_ENABLE_FILESYSTEM 0
+#define MG_ENABLE_FILESYSTEM 1
 #endif
 
 #ifndef MG_ENABLE_GETADDRINFO
@@ -3074,7 +3074,7 @@ struct {								\
 #endif
 
 #ifndef MG_ENABLE_HTTP_CGI
-#define MG_ENABLE_HTTP_CGI 0
+#define MG_ENABLE_HTTP_CGI 1
 #endif
 
 #ifndef MG_ENABLE_HTTP_SSI
@@ -3086,7 +3086,7 @@ struct {								\
 #endif
 
 #ifndef MG_ENABLE_HTTP_STREAMING_MULTIPART
-#define MG_ENABLE_HTTP_STREAMING_MULTIPART 0
+#define MG_ENABLE_HTTP_STREAMING_MULTIPART 1
 #endif
 
 #ifndef MG_ENABLE_HTTP_WEBDAV
@@ -3098,11 +3098,11 @@ struct {								\
 #endif
 
 #ifndef MG_ENABLE_IPV6
-#define MG_ENABLE_IPV6 0
+#define MG_ENABLE_IPV6 1
 #endif
 
 #ifndef MG_ENABLE_MQTT
-#define MG_ENABLE_MQTT 1
+#define MG_ENABLE_MQTT 0
 #endif
 
 #ifndef MG_ENABLE_SOCKS
@@ -3169,7 +3169,7 @@ struct {								\
 #endif
 
 #ifndef MG_ENABLE_CALLBACK_USERDATA
-#define MG_ENABLE_CALLBACK_USERDATA 0
+#define MG_ENABLE_CALLBACK_USERDATA 1
 #endif
 
 #if MG_ENABLE_CALLBACK_USERDATA

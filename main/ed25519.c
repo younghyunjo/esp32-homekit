@@ -97,7 +97,7 @@ int ed25519_sign(uint8_t public_key[], uint8_t private_key[], uint8_t* in, int i
         return err;
     }
 
-    printf("VERIFIED:%d\n", ed25519_verify(public_key, 32, signatured, *signatured_len, in, in_len));
+    //printf("VERIFIED:%d\n", ed25519_verify(public_key, 32, signatured, *signatured_len, in, in_len));
 
     return 0;
 }
