@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <mdns.h>
 
@@ -8,6 +9,7 @@
 
 #define HAP_SERVICE "_hap"
 #define HAP_PROTO "_tcp"
+#define SERVICE_TXT_LEN 4
 
 struct advertiser {
     char* name;
@@ -16,28 +18,35 @@ struct advertiser {
     enum hap_accessory_category category;
     enum advertise_accessory_state state;
     uint32_t config_number;
-    mdns_server_t* mdns;
+    char service_txt_c_sharp[SERVICE_TXT_LEN];
+    char service_txt_sf[SERVICE_TXT_LEN];
+    char service_txt_ci[SERVICE_TXT_LEN];
+    //mdns_server_t* mdns;
 };
 
 static void _service_txt_set(struct advertiser* adv) {
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
-#define SERVICE_TXT_LEN 64
 
-    char service_txt_c_sharp[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_c_sharp, "c#=%u", adv->config_number);
+    memset(adv->service_txt_c_sharp, 0, sizeof(adv->service_txt_c_sharp));
+    sprintf(adv->service_txt_c_sharp, "%d", adv->config_number);
+    memset(adv->service_txt_sf, 0, sizeof(adv->service_txt_sf));
+    sprintf(adv->service_txt_sf, "%d", adv->state == ADVERTISE_ACCESSORY_STATE_NOT_PAIRED ? 1 : 0);
+    memset(adv->service_txt_ci, 0, sizeof(adv->service_txt_ci));
+    sprintf(adv->service_txt_ci, "%d", adv->category);
 
-    char service_txt_id[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_id, "id=%s", adv->id);
+    mdns_txt_item_t hap_service_txt[] = {
+        {"dummy", "dummy"},
+        {"c#", adv->service_txt_c_sharp},
+        {"ff", "0"},
+        {"pv", "1.0"},
+        {"id", adv->id},
+        {"md", adv->name},
+        {"s#", "1"},
+        {"sf", adv->service_txt_sf},
+        {"ci", adv->service_txt_ci},
+    };
 
-    char service_txt_md[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_md, "md=%s", adv->name);
-
-    char service_txt_ci[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_ci, "ci=%d", adv->category);
-
-    char service_txt_sf[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_sf, "sf=%d", adv->state == ADVERTISE_ACCESSORY_STATE_NOT_PAIRED ? 1 : 0);
-
+#if 0
     const char* hap_service_txt[] = {
         service_txt_c_sharp,
         "ff=0",
@@ -48,7 +57,8 @@ static void _service_txt_set(struct advertiser* adv) {
         service_txt_sf,
         service_txt_ci
     };
-    mdns_service_txt_set(adv->mdns, HAP_SERVICE, HAP_PROTO, ARRAY_SIZE(hap_service_txt), hap_service_txt);
+#endif
+    mdns_service_txt_set(HAP_SERVICE, HAP_PROTO, hap_service_txt, ARRAY_SIZE(hap_service_txt));
 }
 
 void advertise_accessory_state_set(void* adv_instance, enum advertise_accessory_state state) {
@@ -86,10 +96,10 @@ void* advertise_accessory_add(char* name, char* id, char* host, int port, uint32
     adv->category = category;
     adv->state = state;
 
-    mdns_init(TCPIP_ADAPTER_IF_STA, &adv->mdns);
-    mdns_set_hostname(adv->mdns, host);
-    mdns_set_instance(adv->mdns, name);
-    mdns_service_add(adv->mdns, HAP_SERVICE, HAP_PROTO, port);
+    mdns_init();
+    mdns_hostname_set(host);
+    mdns_instance_name_set(name);
+    mdns_service_add(name, HAP_SERVICE, HAP_PROTO, port, NULL, 0);
     _service_txt_set(adv);
 
     return 0;
@@ -100,6 +110,5 @@ void advertise_accessory_remove(void* adv_instance) {
         return;
 
     struct advertiser* adv = adv_instance;
-    mdns_free(adv->mdns);
     free(adv);
 }
