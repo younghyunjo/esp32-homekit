@@ -9025,7 +9025,7 @@ MG_INTERNAL void mg_handle_cgi(struct mg_connection *nc, const char *prog,
   sigemptyset(&sa.sa_mask);
   sa.sa_handler = SIG_IGN;
   sa.sa_flags = 0;
-  sigaction(SIGCHLD, &sa, NULL);
+  //sigaction(SIGCHLD, &sa, NULL);
 #endif
 
   if (mg_start_process(opts->cgi_interpreter, prog, blk.buf, blk.vars, dir,

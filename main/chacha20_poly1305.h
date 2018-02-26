@@ -5,7 +5,10 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
+
 #define CHACHA20_POLY1305_AUTH_TAG_LENGTH   16
+#define CHACHA20_POLY1305_NONCE_LENGTH    12
 
 enum chacha20_poly1305_type {
     CHACHA20_POLY1305_TYPE_PS05,
@@ -16,6 +19,9 @@ enum chacha20_poly1305_type {
 
 int chacha20_poly1305_decrypt(enum chacha20_poly1305_type type, uint8_t* key, 
         uint8_t* encrypted, int encrypted_len, uint8_t* decrypted);
+int chacha20_poly1305_decrypt_with_nonce(uint8_t nonce[CHACHA20_POLY1305_NONCE_LENGTH], uint8_t* key, 
+        uint8_t* encrypted, int encrypted_len, uint8_t* decrypted);
+
 int chacha20_poly1305_encrypt(enum chacha20_poly1305_type type, uint8_t* key, 
         uint8_t* plain_text, int plain_text_length, 
         uint8_t* encrypted, uint8_t* auth_tag);

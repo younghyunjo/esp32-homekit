@@ -22,6 +22,18 @@ static struct hkdf_salt_info _hkdf_salt_info[] = {
     {   /* HKDF_KEY_TYPE_PAIR_SETUP_ACCESSORY */
         .salt = "Pair-Setup-Accessory-Sign-Salt",
         .info = "Pair-Setup-Accessory-Sign-Info",
+    },
+    {   /* HKDF_KEY_TYPE_PAIR_VERIFY_ENCRYPT */
+        .salt = "Pair-Verify-Encrypt-Salt",
+        .info = "Pair-Verify-Encrypt-Info",
+    },
+    {   /* HKDF_KEY_TYPE_CONTROL_READ */
+        .salt = "Control-Salt",
+        .info = "Control-Read-Encryption-Key",
+    },
+    {   /* HKDF_KEY_TYPE_CONTROL_WRITE */
+        .salt = "Control-Salt",
+        .info = "Control-Write-Encryption-Key",
     }
 };
 

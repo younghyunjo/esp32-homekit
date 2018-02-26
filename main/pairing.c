@@ -12,25 +12,32 @@
 #include "hkdf.h"
 #include "chacha20_poly1305.h"
 #include "ed25519.h"
+#include "curve25519.h"
 #include "pair_devices.h"
 #include "pairing.h"
 #include "pair_error.h"
+#include "discovery.h"
 
 #define TAG "PAIR"
+int write_cnt = 0;
+int read_cnt = 0;
 
 struct longterm_key {
     uint8_t public[ED25519_PUBLIC_KEY_LENGTH];
     uint8_t private[ED28819_PRIVATE_KEY_LENGTH];
 };
 
-
 struct pair_desc {
+    bool paired;
     char* acc_id;
     struct pairing_db_ops db_ops;
 
     void* srp;
-    struct longterm_key acc_ltpk;
+    struct longterm_key acc_ltk;
     void* paired_devices;
+
+    //TODO FIXME MULTI SESSION
+    uint8_t session_key[CURVE25519_SECRET_LENGTH];
 };
 static struct pair_desc* _pair = NULL;
 
@@ -151,7 +158,7 @@ static int _subtlv_decrypt(enum hkdf_key_type htype,
     return 0;
 }
 
-static int _acc_m6_subtlv(uint8_t* srp_key, char* acc_id, uint8_t* acc_ltpk_public, uint8_t* acc_ltpk_private,  uint8_t** acc_subtlv, int* acc_subtlv_length)
+static int _acc_m6_subtlv(uint8_t* srp_key, char* acc_id, uint8_t* acc_ltk_public, uint8_t* acc_ltk_private,  uint8_t** acc_subtlv, int* acc_subtlv_length)
 {
     uint8_t accessoryx[HKDF_KEY_LEN] = {0,};
     hkdf_key_get(HKDF_KEY_TYPE_PAIR_SETUP_ACCESSORY, srp_key, SRP_SESSION_KEY_LENGTH, 
@@ -160,24 +167,24 @@ static int _acc_m6_subtlv(uint8_t* srp_key, char* acc_id, uint8_t* acc_ltpk_publ
     int acc_info_len = 0;
     uint8_t* acc_info = _concat3(accessoryx, sizeof(accessoryx), 
             (uint8_t*)acc_id, 17, 
-            acc_ltpk_public, ED25519_PUBLIC_KEY_LENGTH, &acc_info_len);
+            acc_ltk_public, ED25519_PUBLIC_KEY_LENGTH, &acc_info_len);
 
     int acc_signature_length = ED25519_SIGN_LENGTH;
     uint8_t acc_signature[ED25519_SIGN_LENGTH] = {0,};
-    ed25519_sign(acc_ltpk_public, acc_ltpk_private, acc_info, acc_info_len,
+    ed25519_sign(acc_ltk_public, acc_ltk_private, acc_info, acc_info_len,
             acc_signature, &acc_signature_length);
 
     _concat_free(acc_info);
 
-    int acc_plain_subtlv_length = tlv_encode_length(17);
+    int acc_plain_subtlv_length = tlv_encode_length(strlen(acc_id));
     acc_plain_subtlv_length += tlv_encode_length(ED25519_PUBLIC_KEY_LENGTH);
     acc_plain_subtlv_length += tlv_encode_length(acc_signature_length);
 
     uint8_t* acc_plain_subtlv = malloc(acc_plain_subtlv_length);
     uint8_t* sub_tlv_write_ptr = acc_plain_subtlv;
 
-    sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_IDENTIFIER, 17, (uint8_t*)acc_id, sub_tlv_write_ptr);
-    sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_PUBLICKEY, ED25519_PUBLIC_KEY_LENGTH, acc_ltpk_public, sub_tlv_write_ptr);
+    sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_IDENTIFIER, strlen(acc_id), (uint8_t*)acc_id, sub_tlv_write_ptr);
+    sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_PUBLICKEY, ED25519_PUBLIC_KEY_LENGTH, acc_ltk_public, sub_tlv_write_ptr);
     sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_SIGNATURE, ED25519_SIGN_LENGTH, acc_signature, sub_tlv_write_ptr);
 
 #if 0
@@ -233,7 +240,7 @@ static int _setup_m6(struct pair_desc* pair,
 
     uint8_t* acc_subtlv;
     int acc_subtlv_length = 0;
-    _acc_m6_subtlv(srp_key, pair->acc_id, pair->acc_ltpk.public, pair->acc_ltpk.private, &acc_subtlv, &acc_subtlv_length);
+    _acc_m6_subtlv(srp_key, pair->acc_id, pair->acc_ltk.public, pair->acc_ltk.private, &acc_subtlv, &acc_subtlv_length);
 
     uint8_t state[] = {0x06};
     *acc_msg_length = tlv_encode_length(sizeof(state));
@@ -250,7 +257,6 @@ static int _setup_m6(struct pair_desc* pair,
     tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_ENCRYPTED_DATA, acc_subtlv_length, acc_subtlv, tlv_encode_ptr);
 
     _subtlv_free(acc_subtlv);
-    
     return 0;
 }
 
@@ -358,7 +364,7 @@ static int _setup_m2(struct pair_desc* pair,
     return 0;
 }
 
-static void _acc_ltpk_init(struct pairing_db_ops* ops, struct longterm_key* ltk)
+static void _acc_ltk_init(struct pairing_db_ops* ops, struct longterm_key* ltk)
 {
 #if 1
     {
@@ -412,16 +418,18 @@ static int _pairing_setup(struct pair_desc* pair, uint8_t* device_msg, int devic
     }
 }
 
-int pairing_over_ip(
+int pairing_over_ip_setup(
         char* req_body, int req_body_length, 
         char** res_header, int* res_header_len, char** res_body, int* res_body_len)
 {
     if (!_pair) {
+        ESP_LOGE(TAG, "pairing module is not initialized\n");
         return -1;
     }
 
     int err = _pairing_setup(_pair, (uint8_t*)req_body, req_body_length, (uint8_t**)res_body, res_body_len);
     if (err < 0) {
+        ESP_LOGE(TAG, "_pairing_setup failed\n");
         return -1;
     }
 
@@ -429,8 +437,198 @@ int pairing_over_ip(
     sprintf(*res_header, header_fmt, *res_body_len);
     *res_header_len = strlen(*res_header);
 
-    printf("%s\n", *res_header);
-    _array_print(*res_body, *res_body_len);
+    return 0;
+}
+
+static int _verify_m4(struct pair_desc* pair, 
+        uint8_t* device_msg, int device_msg_length, 
+        uint8_t** acc_msg, int* acc_msg_length)
+{
+#if 1
+    struct tlv* encrypted_tlv = tlv_decode((uint8_t*)device_msg, device_msg_length,
+            HAP_TLV_TYPE_ENCRYPTED_DATA);
+    if (encrypted_tlv == NULL) {
+        ESP_LOGE(TAG, "tlv_devoce HAP_TLV_TYPE_ENCRYPTED_DATA failed\n");
+        return -1;
+    }
+
+    uint8_t subtlv_key[HKDF_KEY_LEN] = {0,};
+    hkdf_key_get(HKDF_KEY_TYPE_PAIR_VERIFY_ENCRYPT, pair->session_key, CURVE25519_SECRET_LENGTH, subtlv_key);
+
+    uint8_t* subtlv = malloc(encrypted_tlv->length);
+
+    chacha20_poly1305_decrypt(CHACHA20_POLY1305_TYPE_PV03, subtlv_key, (uint8_t*)&encrypted_tlv->value, encrypted_tlv->length, subtlv);
+
+    tlv_decoded_item_free(encrypted_tlv);
+
+    int subtlv_length = strlen((char*)subtlv);;
+
+
+    struct tlv* ios_device_pairng_id = tlv_decode(subtlv, subtlv_length, 
+            HAP_TLV_TYPE_IDENTIFIER);
+    if (ios_device_pairng_id == NULL) {
+        ESP_LOGE(TAG, "tlv_devoce HAP_TLV_TYPE_IDENTIFIER failed\n");
+        return -1;
+    }
+
+    struct tlv* ios_device_signature = tlv_decode(subtlv, subtlv_length, 
+            HAP_TLV_TYPE_SIGNATURE);
+    if (ios_device_signature == NULL) {
+        ESP_LOGE(TAG, "tlv_devoce HAP_TLV_TYPE_SIGNATURE failed\n");
+        return -1;
+    }
+
+    free(subtlv);
+
+    tlv_decoded_item_free(ios_device_pairng_id);
+    tlv_decoded_item_free(ios_device_signature);
+#endif
+
+    uint8_t state[] = {4};
+    *acc_msg_length = tlv_encode_length(sizeof(state));
+
+    //uint8_t error[] = {HAP_TLV_ERROR_AUTHENTICATION};
+    //*acc_msg_length += tlv_encode_length(sizeof(error));
+
+    (*acc_msg) = malloc(*acc_msg_length);
+    if (*acc_msg == NULL) {
+        ESP_LOGE(TAG, "malloc failed\n");
+        return pair_error(HAP_TLV_ERROR_UNKNOWN, acc_msg, acc_msg_length);
+    }
+
+    uint8_t* tlv_encode_ptr = *acc_msg;
+    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_STATE, sizeof(state), state, tlv_encode_ptr);
+
+    //tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_ERROR, sizeof(error), error, tlv_encode_ptr);
+#if 1
+    _array_print((char*)*acc_msg, *acc_msg_length);
+#endif
+    pair->paired = true;
+
+    return 0;
+}
+
+static int _verify_m2(struct pair_desc* pair, 
+        uint8_t* device_msg, int device_msg_length, 
+        uint8_t** acc_msg, int* acc_msg_length)
+{
+    uint8_t acc_curve_public_key[CURVE25519_KEY_LENGTH] = {0,};
+    uint8_t acc_curve_private_key[CURVE25519_KEY_LENGTH] = {0,};
+    if (curve25519_key_generate(acc_curve_public_key, acc_curve_private_key) < 0) {
+        ESP_LOGE(TAG, "curve25519_key_generate failed\n");
+        return -1;
+    }
+
+    struct tlv* ios_device_curve_key = tlv_decode((uint8_t*)device_msg, 
+            device_msg_length, HAP_TLV_TYPE_PUBLICKEY);
+
+    uint8_t session_key[CURVE25519_SECRET_LENGTH] = {0,};
+    int session_key_length = CURVE25519_SECRET_LENGTH;
+    if (curve25519_shared_secret((uint8_t*)&ios_device_curve_key->value,
+            acc_curve_private_key, session_key, &session_key_length) < 0) {
+        ESP_LOGE(TAG, "curve25519_shared_secret failed\n");
+        return -1;
+    }
+
+    int acc_info_len;
+    uint8_t* acc_info = _concat3(acc_curve_public_key, CURVE25519_KEY_LENGTH,
+            (uint8_t*)pair->acc_id, strlen(pair->acc_id),
+            (uint8_t*)&ios_device_curve_key->value, ios_device_curve_key->length,
+            &acc_info_len);
+
+    tlv_decoded_item_free(ios_device_curve_key);
+
+    int acc_signature_length = ED25519_SIGN_LENGTH;
+    uint8_t acc_signature[ED25519_SIGN_LENGTH] = {0,};
+    ed25519_sign(pair->acc_ltk.public, pair->acc_ltk.private, 
+            acc_info, acc_info_len,
+            acc_signature, &acc_signature_length);
+
+    _concat_free(acc_info);
+
+    int acc_plain_subtlv_length = tlv_encode_length(strlen(pair->acc_id));
+    acc_plain_subtlv_length += tlv_encode_length(acc_signature_length);
+
+    uint8_t* acc_plain_subtlv = malloc(acc_plain_subtlv_length);
+    uint8_t* sub_tlv_write_ptr = acc_plain_subtlv;
+
+    sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_IDENTIFIER, strlen(pair->acc_id), (uint8_t*)pair->acc_id, sub_tlv_write_ptr);
+    sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_SIGNATURE, ED25519_SIGN_LENGTH, acc_signature, sub_tlv_write_ptr);
+
+    int acc_subtlv_length = acc_plain_subtlv_length + CHACHA20_POLY1305_AUTH_TAG_LENGTH;
+    uint8_t* acc_subtlv = (uint8_t*)calloc(1, acc_subtlv_length);
+
+    uint8_t subtlv_key[HKDF_KEY_LEN] = {0,};
+    hkdf_key_get(HKDF_KEY_TYPE_PAIR_VERIFY_ENCRYPT, session_key, CURVE25519_SECRET_LENGTH, subtlv_key);
+    chacha20_poly1305_encrypt(CHACHA20_POLY1305_TYPE_PV02, subtlv_key, acc_plain_subtlv, acc_plain_subtlv_length, acc_subtlv, acc_subtlv + acc_plain_subtlv_length);
+
+    free(acc_plain_subtlv);
+
+    uint8_t state[] = {0x02};
+    *acc_msg_length = tlv_encode_length(sizeof(state));
+    *acc_msg_length += tlv_encode_length(acc_subtlv_length);
+    *acc_msg_length += tlv_encode_length(CURVE25519_KEY_LENGTH);
+
+    (*acc_msg) = malloc(*acc_msg_length);
+    if (*acc_msg == NULL) {
+        ESP_LOGE(TAG, "malloc failed. size:%d\n", *acc_msg_length);
+        return pair_error(HAP_TLV_ERROR_UNKNOWN, acc_msg, acc_msg_length);
+    }
+
+    uint8_t* tlv_encode_ptr = *acc_msg;
+    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_STATE, sizeof(state), state, tlv_encode_ptr);
+    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_PUBLICKEY, CURVE25519_KEY_LENGTH, acc_curve_public_key, tlv_encode_ptr);
+    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_ENCRYPTED_DATA, acc_subtlv_length, acc_subtlv, tlv_encode_ptr);
+
+    _subtlv_free(acc_subtlv);
+
+    //TODO FIXME MULTI SESSION
+    memcpy(pair->session_key, session_key, CURVE25519_SECRET_LENGTH);
+    
+    return 0;
+}
+
+static int _pairing_verify(struct pair_desc* pair, 
+        uint8_t* device_msg, int device_msg_length, 
+        uint8_t** acc_msg, int* acc_msg_length)
+{
+    if (!pair || !device_msg || device_msg_length == 0 || !acc_msg || !acc_msg_length) {
+        ESP_LOGE(TAG, "Invalid arguments\n");
+        return -1;
+    }
+
+    uint8_t state = _state_get(device_msg, device_msg_length);
+    ESP_LOGI(TAG, "VERIFY STATE:%d", state);
+    switch (state) {
+    case 0x01:
+        return _verify_m2(pair, device_msg, device_msg_length,
+                acc_msg, acc_msg_length);
+    case 0x03:
+        return _verify_m4(pair, device_msg, device_msg_length,
+                acc_msg, acc_msg_length);
+    default:
+        ESP_LOGE(TAG, "Invalid state number. %d\n", state);
+        return -1;
+    }
+}
+
+int pairing_over_ip_verify(char* req_body, int req_body_length, 
+        char** res_header, int* res_header_len, char** res_body, int* res_body_len)
+{
+    if (!_pair) {
+        ESP_LOGE(TAG, "pairing module is not initialized\n");
+        return -1;
+    }
+
+    int err = _pairing_verify(_pair, (uint8_t*)req_body, req_body_length, (uint8_t**)res_body, res_body_len);
+    if (err < 0) {
+        ESP_LOGE(TAG, "_pairing_verify failed\n");
+        return -1;
+    }
+
+    *res_header = calloc(1, strlen(header_fmt) + 16);
+    sprintf(*res_header, header_fmt, *res_body_len);
+    *res_header_len = strlen(*res_header);
 
     return 0;
 }
@@ -468,8 +666,9 @@ int pairing_init(char* setup_code, char* acc_id, struct pairing_db_ops* ops)
     _pair->db_ops = *ops;
 
     _pair->acc_id = strdup(acc_id);
-    _acc_ltpk_init(&_pair->db_ops, &_pair->acc_ltpk);
+    _acc_ltk_init(&_pair->db_ops, &_pair->acc_ltk);
 
+    discovery_init("lights", 661, "HOME ACC", acc_id, 1, HAP_ACCESSORY_CATEGORY_LIGHTBULB);
     return 0;
 }
 
@@ -479,4 +678,42 @@ void pairing_cleanup(void)
     if (_pair->srp)
         srp_cleanup(_pair->srp);
     free(_pair);
+}
+
+void paired_msg(int len, char* msg)
+{
+#if 0
+    struct pair_desc *pair = _pair;
+    if (pair->paired == false)
+        return;
+
+    uint8_t key[HKDF_KEY_LEN] = {0,};
+
+    hkdf_key_get(HKDF_KEY_TYPE_CONTROL_READ, pair->session_key, CURVE25519_SECRET_LENGTH, key);
+
+    uint8_t* tmp = (uint8_t*)msg;
+    uint8_t* decrypted;
+    decrypted = malloc(len);
+    int offset = 0;
+    int l = 0;
+
+    uint8_t nonce[CHACHA20_POLY1305_NONCE_LENGTH] = {0,};
+    while (offset < len) {
+        l = msg[0]  + msg[1]*256;
+        nonce[4] = write_cnt % 256;
+        nonce[4] = write_cnt++ / 256;
+
+
+        //chacha20_poly1305_decrypt_with_nonce(nonce, key, msg, l, )
+
+
+
+    }
+
+#endif
+
+}
+
+void pairing_test(void)
+{
 }

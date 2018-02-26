@@ -10,11 +10,11 @@
 
 #define TAG "PAIR_DEVICES"
 
-#define IOS_DEVICE_ID_LEN   36
+#define IOSDEVICE_ID_LEN   36
 
 struct ios_devices {
     bool assigned;
-    uint8_t id[IOS_DEVICE_ID_LEN];
+    uint8_t id[IOSDEVICE_ID_LEN];
     uint8_t ltpk[ED25519_PUBLIC_KEY_LENGTH];
 };
 
@@ -39,6 +39,8 @@ static int _find_empty_slot(struct pair_devices* pd)
 
 int pair_devices_add(void* _pd, uint8_t* id, uint8_t* ltpk)
 {
+    return 0;
+    //TODO duplication check
     struct pair_devices* pd = _pd;
     int slot = _find_empty_slot(pd);
     if (slot < 0) {
@@ -47,13 +49,13 @@ int pair_devices_add(void* _pd, uint8_t* id, uint8_t* ltpk)
     }
 
     pd->slots |= (0x1 < slot);
-    memcpy(pd->devices[slot].id, id, IOS_DEVICE_ID_LEN); 
+    memcpy(pd->devices[slot].id, id, IOSDEVICE_ID_LEN); 
     memcpy(pd->devices[slot].ltpk, ltpk, ED25519_PUBLIC_KEY_LENGTH); 
     pd->devices[slot].assigned = true;
 
     char key[32] = {0,};
     sprintf(key, "PAIRED_ID%d", slot);
-    pd->ops.set(key, id, IOS_DEVICE_ID_LEN);
+    pd->ops.set(key, id, IOSDEVICE_ID_LEN);
 
     memset(key, 0, sizeof(key));
     sprintf(key, "PAIRED_LTPK%d", slot);
@@ -64,7 +66,7 @@ int pair_devices_add(void* _pd, uint8_t* id, uint8_t* ltpk)
     pd->ops.set(key, (uint8_t*)&pd->slots, sizeof(pd->slots));
 
     {
-        for (int j=0; j<IOS_DEVICE_ID_LEN; j++) {
+        for (int j=0; j<IOSDEVICE_ID_LEN; j++) {
             printf("%02X ", pd->devices[slot].id[j]);
         }
         printf("\n");
@@ -95,7 +97,7 @@ void* pair_devices_init(struct pairing_db_ops* ops)
         if ((0x1 << i) & pd->slots) {
             memset(key, 0, sizeof(key));
             sprintf(key, "PAIRED_ID%d", i);
-            pd->ops.get(key, pd->devices[i].id, IOS_DEVICE_ID_LEN);
+            pd->ops.get(key, pd->devices[i].id, IOSDEVICE_ID_LEN);
 
             memset(key, 0, sizeof(key));
             sprintf(key, "PAIRED_LTPK%d", i);
@@ -103,7 +105,7 @@ void* pair_devices_init(struct pairing_db_ops* ops)
             pd->devices[i].assigned = true;
 
             {
-                for (int j=0; j<IOS_DEVICE_ID_LEN; j++) {
+                for (int j=0; j<IOSDEVICE_ID_LEN; j++) {
                     printf("%02X ", pd->devices[i].id[j]);
                 }
                 printf("\n");

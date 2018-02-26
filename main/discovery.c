@@ -1,3 +1,4 @@
+#include <string.h>
 #include <esp_log.h>
 #include <esp_wifi.h>
 #include <mdns.h>
@@ -13,42 +14,46 @@
 
 static mdns_server_t* _mdns = NULL;
 
+struct discovery_desc {
+    uint32_t config_number;
+    char* id;
+    char* model_name;
+    enum hap_accessory_category category;
+    bool paired;
+};
+static struct discovery_desc* _dd;
+
+static void _service_txt_set(struct discovery_desc* dd)
+{
+}
+
 int discovery_init(const char* host, const int port, const char* model_name,
         const char* id, const uint32_t config_number, const enum hap_accessory_category category) {
-#define SERVICE_TXT_LEN 64
 
     if (_mdns != NULL) {
         ESP_LOGW(TAG, "discovery is already intialized\n");
         return 0;
     }
 
-    char service_txt_c_sharp[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_c_sharp, "c#=%u", config_number);
-
-    char service_txt_id[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_id, "id=%s", id);
-
-    char service_txt_md[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_md, "md=%s", model_name);
-
-    char service_txt_ci[SERVICE_TXT_LEN] = {0,};
-    sprintf(service_txt_ci, "ci=%d", category);
-
-    const char* hap_service_txt[] = {
-        service_txt_c_sharp,
-        "ff=0",
-        service_txt_id,
-        service_txt_md,
-        "s#=1",
-        "sf=1",
-        service_txt_ci,
-    };
 
     ESP_ERROR_CHECK(mdns_init(TCPIP_ADAPTER_IF_STA, &_mdns));
     ESP_ERROR_CHECK(mdns_set_hostname(_mdns, host));
     ESP_ERROR_CHECK(mdns_set_instance(_mdns, model_name));
     ESP_ERROR_CHECK(mdns_service_add(_mdns, HAP_SERVICE, HAP_PROTO, port));
-    ESP_ERROR_CHECK(mdns_service_txt_set(_mdns, HAP_SERVICE, HAP_PROTO, ARRAY_SIZE(hap_service_txt), hap_service_txt));
+
+    _dd = malloc(sizeof(struct discovery_desc));
+    _dd->config_number = config_number;
+    _dd->id = strdup(id);
+    _dd->model_name = strdup(model_name);
+    _dd->category = category;
+    _dd->paired = false;
+    _service_txt_set(_dd);
 
     return 0;
+}
+
+void discovery_paired(void)
+{
+    _dd->paired = true;
+    _service_txt_set(_dd);
 }

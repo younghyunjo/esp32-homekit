@@ -5,11 +5,14 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
+
 #include "hap.h"
 
 int discovery_init(const char* host, const int port, const char* model_name,
         const char* id, const uint32_t config_number, const enum hap_accessory_category category);
 
+void discovery_paired(void);
 #ifdef __cplusplus
 }
 #endif
