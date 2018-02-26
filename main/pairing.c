@@ -16,7 +16,6 @@
 #include "pair_devices.h"
 #include "pairing.h"
 #include "pair_error.h"
-#include "discovery.h"
 
 #define TAG "PAIR"
 int write_cnt = 0;
@@ -668,7 +667,7 @@ int pairing_init(char* setup_code, char* acc_id, struct pairing_db_ops* ops)
     _pair->acc_id = strdup(acc_id);
     _acc_ltk_init(&_pair->db_ops, &_pair->acc_ltk);
 
-    discovery_init("lights", 661, "HOME ACC", acc_id, 1, HAP_ACCESSORY_CATEGORY_LIGHTBULB);
+    //discovery_init("lights", 661, "HOME ACC", acc_id, 1, HAP_ACCESSORY_CATEGORY_LIGHTBULB);
     return 0;
 }
 
