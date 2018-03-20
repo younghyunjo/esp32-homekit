@@ -181,7 +181,7 @@ enum hap_characteristic_type {
     HAP_CHARACTER_COLOR_TEMPERATURE = 0xCE,
 };
 
-struct hap_attr_character {
+struct hap_characteristic {
     enum hap_characteristic_type type;
     void* value;
 
@@ -189,8 +189,6 @@ struct hap_attr_character {
     void* (*read)(void* arg);
     void (*write)(void* arg, void* value, int value_len);
     void (*notification)(void* arg, void* ev_handle, bool enable);
-
-    int _iid; /*internal use only*/
 };
 
 typedef struct {
@@ -199,7 +197,7 @@ typedef struct {
 
 void* hap_attr_accessory_add(void* acc_instance);
 void* hap_attr_service_and_characteristics_add(void* acc_instance, void* _attr_a,
-        enum hap_service_type type, struct hap_attr_character* cs, int nr_cs);
+        enum hap_service_type type, struct hap_characteristic* cs, int nr_cs);
 
 void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,
                         int port, uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback);

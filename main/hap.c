@@ -250,7 +250,7 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             int res_header_len = 0;
             char* res_body = NULL;
             int body_len = 0;
-            hap_acc_characteristic_put(a, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
+            hap_acc_characteristic_put(a, (void*)hc, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
             encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
             hap_acc_characteristic_put_free(res_header, res_body);
         }
@@ -335,6 +335,14 @@ static void _accessory_ltk_load(struct hap_accessory* a)
     }
 }
 
+int hap_notification_response(void* acc_instance, void* ev_handle, void* value)
+{
+    struct hap_accessory* a = acc_instance;
+    struct hap_connection* hc = ev_handle;
+
+    return 0;
+}
+
 void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,
                         int port, uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback)
 {
@@ -405,7 +413,7 @@ void* hap_attr_accessory_add(void* acc_instance)
     return hap_acc_accessory_add(acc_instance);
 }
 void* hap_attr_service_and_characteristics_add(void* acc_instance, void* _attr_a,
-        enum hap_service_type type, struct hap_attr_character* cs, int nr_cs) 
+        enum hap_service_type type, struct hap_characteristic* cs, int nr_cs) 
 {
     return hap_acc_service_and_characteristics_add(acc_instance, _attr_a, type, cs, nr_cs);
 }

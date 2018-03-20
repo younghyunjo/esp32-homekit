@@ -47,7 +47,6 @@ struct hap_accessory {
     hap_accessory_callback_t callback;
 };
 
-
 struct hap_connection {
     bool pair_verified;
 

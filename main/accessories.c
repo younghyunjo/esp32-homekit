@@ -36,6 +36,17 @@ struct hap_attr_service {
     void* characters;
 };
 
+struct hap_attr_characteristic {
+    int iid;
+    enum hap_characteristic_type type;
+    void* value;
+
+    void* callback_arg;
+    void* (*read)(void* arg);
+    void (*write)(void* arg, void* value, int value_len);
+    void (*notification)(void* arg, void* ev_handle, bool enable);
+};
+
 
 static const char* header_204_fmt = 
     "HTTP/1.1 204 No Content\r\n"
@@ -53,7 +64,7 @@ static const char* header_200_fmt =
 int accessories_do(struct hap_accessory* a, char** res_header, int* res_header_len, char** res_body, int* res_body_len);
 void accessories_do_free(char* res_header, char* res_body);
 
-static struct hap_attr_character* _attr_character_find(struct list_head* attr_accessories, int aid, int iid)
+static struct hap_attr_characteristic* _attr_character_find(struct list_head* attr_accessories, int aid, int iid)
 {
     struct hap_attr_accessory* a_ptr;
     struct hap_attr_service* s_ptr;
@@ -62,9 +73,9 @@ static struct hap_attr_character* _attr_character_find(struct list_head* attr_ac
             continue;
 
         list_for_each_entry(s_ptr, &a_ptr->services, list) {
-            struct hap_attr_character* c = (struct hap_attr_character*)&s_ptr->characters;
+            struct hap_attr_characteristic* c = (struct hap_attr_characteristic*)&s_ptr->characters;
             for (int i=0; i<s_ptr->nr_character; i++, c++) {
-                if (c->_iid == iid)
+                if (c->iid == iid)
                     return c;
             }
         }
@@ -72,14 +83,14 @@ static struct hap_attr_character* _attr_character_find(struct list_head* attr_ac
     return NULL;
 }
 
-static cJSON* _attr_characterisic_to_json(struct hap_attr_character* c)
+static cJSON* _attr_characterisic_to_json(struct hap_attr_characteristic* c)
 {
     cJSON* root = cJSON_CreateObject();
 
     char type[37] = {0,};
     sprintf(type, HAP_UUID, c->type);
     cJSON_AddStringToObject(root, "type", type);
-    cJSON_AddNumberToObject(root, "iid", c->_iid);
+    cJSON_AddNumberToObject(root, "iid", c->iid);
     cJSON* perms = cJSON_CreateArray(); 
     cJSON_AddItemToObject(root, "perms", perms);
 
@@ -162,7 +173,7 @@ static cJSON* _attr_accessories_to_json(struct list_head* attr_accessories)
             cJSON_AddItemToObject(service, "characteristics", characteristics);
 
             int i;
-            struct hap_attr_character* c = (struct hap_attr_character*)&s_ptr->characters;
+            struct hap_attr_characteristic* c = (struct hap_attr_characteristic*)&s_ptr->characters;
             for (i=0; i<s_ptr->nr_character; i++, c++) {
                 cJSON* characteristic = _attr_characterisic_to_json(c);
                 cJSON_AddItemToArray(characteristics, characteristic);
@@ -173,7 +184,7 @@ static cJSON* _attr_accessories_to_json(struct list_head* attr_accessories)
     return root;
 }
 
-static cJSON* _characteristic_read(int aid, int iid, struct hap_attr_character* c)
+static cJSON* _characteristic_read(int aid, int iid, struct hap_attr_characteristic* c)
 {
     cJSON* char_json = cJSON_CreateObject();
     cJSON_AddNumberToObject(char_json, "aid", aid);
@@ -207,7 +218,7 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, ch
     cJSON_AddItemToObject(root, "characteristics", characteristics);
 
     sscanf(query, "id=%d.%d", &aid, &iid);
-    struct hap_attr_character* c = _attr_character_find(&a->attr_accessories, aid, iid);
+    struct hap_attr_characteristic* c = _attr_character_find(&a->attr_accessories, aid, iid);
     if (c != NULL) {
         cJSON* char_json = _characteristic_read(aid, iid, c);
         cJSON_AddItemToArray(characteristics, char_json);
@@ -264,8 +275,7 @@ void hap_acc_characteristic_get_free(char* res_header, char* res_body)
         free(res_body);
 }
 
-
-int hap_acc_characteristic_put(struct hap_accessory* a, char* req_body, int req_body_len, char** res_header, int* res_header_len, char** res_body, char* res_body_len)
+int hap_acc_characteristic_put(struct hap_accessory* a, void* ev_handle, char* req_body, int req_body_len, char** res_header, int* res_header_len, char** res_body, char* res_body_len)
 {
     printf("%.*s\n", req_body_len, req_body);
     cJSON* root = cJSON_Parse(req_body);
@@ -276,7 +286,7 @@ int hap_acc_characteristic_put(struct hap_accessory* a, char* req_body, int req_
         int aid = cJSON_GetObjectItem(char_json, "aid")->valueint;
         int iid = cJSON_GetObjectItem(char_json, "iid")->valueint;
 
-        struct hap_attr_character* c = _attr_character_find(&a->attr_accessories, aid, iid);
+        struct hap_attr_characteristic* c = _attr_character_find(&a->attr_accessories, aid, iid);
         if (c == NULL)
             continue;
 
@@ -284,7 +294,8 @@ int hap_acc_characteristic_put(struct hap_accessory* a, char* req_body, int req_
             continue;
 
         cJSON* ev_json = cJSON_GetObjectItem(char_json, "ev");
-        if (ev_json) {
+        if (ev_json && c->notification) {
+            c->notification(c->callback_arg, ev_handle, (bool)ev_json->valueint);
         }
 
         cJSON* value_json = cJSON_GetObjectItem(char_json, "value");
@@ -350,33 +361,26 @@ void* hap_acc_accessory_add(void* acc_instance)
 }
 
 void* hap_acc_service_and_characteristics_add(void* acc_instance, void* _attr_a,
-        enum hap_service_type type, struct hap_attr_character* cs, int nr_cs) 
+        enum hap_service_type type, struct hap_characteristic* cs, int nr_cs) 
 {
     struct hap_accessory* a = acc_instance;
     struct hap_attr_accessory* attr_a = _attr_a;
-    struct hap_attr_service* attr_s = calloc(1, sizeof(struct hap_attr_service) + sizeof(struct hap_attr_character) * nr_cs);
+    struct hap_attr_service* attr_s = calloc(1, sizeof(struct hap_attr_service) + sizeof(struct hap_attr_characteristic) * nr_cs);
     attr_s->iid = ++attr_a->last_iid;
     attr_s->type = type;;
     attr_s->nr_character = nr_cs;
     list_add_tail(&attr_s->list, &attr_a->services);
 
-    struct hap_attr_character* c = (struct hap_attr_character*)&attr_s->characters;
+    struct hap_attr_characteristic* c = (struct hap_attr_characteristic*)&attr_s->characters;
     for (int i=0; i<nr_cs; i++) {
-        cs[i]._iid = ++attr_a->last_iid;
-        *c = cs[i];
+        c->iid = ++attr_a->last_iid;
+        c->type = cs[i].type;
+        c->value = cs[i].value;
+        c->read = cs[i].read;
+        c->write = cs[i].write;
+        c->notification = cs[i].notification;
         c++;
     }
 
     return NULL;
 }
-
-/*
-hap_obj_accessories_do
-hap_obj_accessories_do_free
-hap_obj_characteristics_get
-hap_obj_characteristics_get_free
-hap_obj_characteristics_put
-hap_obj_characteristics_put_free
-hap_obj_accessory_add
-hap_obj_service_and_characteristics_add
-*/
