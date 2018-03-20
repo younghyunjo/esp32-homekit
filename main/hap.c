@@ -3,10 +3,14 @@
 #include <string.h>
 #include <stdint.h>
 
+#include <cJSON.h>
+
 #include "advertise.h"
+#include "chacha20_poly1305.h"
 #include "ed25519.h"
 #include "hap.h"
 #include "hap_internal.h"
+#include "accessories.h"
 #include "httpd.h"
 #include "iosdevice.h"
 #include "mongoose.h"
@@ -14,55 +18,156 @@
 #include "pair_setup.h"
 #include "pair_verify.h"
 
-struct hap_accessory {
-    char id[HAP_ID_LENGTH+1];
-    char pincode[HAP_PINCODE_LENGTH+1];
-    char* name;
-    char* vendor;
-    int port;
-
-    enum hap_accessory_category category;
-    uint32_t config_number;
-
-    void* advertise;
-    void* bind;
-    void* iosdevices;
-
-    struct list_head connections;
-
-    struct {
-        uint8_t public[ED25519_PUBLIC_KEY_LENGTH];
-        uint8_t private[ED28819_PRIVATE_KEY_LENGTH];
-    } keys;
-
-    void* callback_arg;
-    hap_accessory_callback_t callback;
-};
-
 struct hap {
-    void* dummy;
+    int nr_accessory;
 };
+
+static const char* header_204_fmt = 
+    "HTTP/1.1 204 No Content\r\n"
+    "Connection: keep-alive\r\n"
+    "Content-type: application/hap+json\r\n"
+    "\r\n";
+
+static const char* header_200_fmt = 
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Length: %d\r\n"
+    "Connection: keep-alive\r\n"
+    "Content-type: application/hap+json\r\n"
+    "\r\n";
 
 static struct hap* _hap_desc;
 
-static void _hap_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len)
+static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len);
+
+static int _decrypt(struct hap_connection* hc, char* encrypted, int len, char* decrypted, uint8_t** saveptr)
+{
+#define AAD_LENGTH 2
+    uint8_t* ptr;
+    if (*saveptr == NULL) {
+        hc->decrypt_count = 0;
+        ptr = (uint8_t*)encrypted;
+    }
+    else if (*saveptr < encrypted + len) {
+        ptr = *saveptr;
+    }
+    else {
+        printf("_decrypt end\n");
+        return 0;
+    }
+
+    int decrypted_len = ptr[1] * 256 + ptr[0];
+    uint8_t nonce[12] = {0, 0, 0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0};
+    nonce[4] = hc->decrypt_count % 256;
+    nonce[5] = hc->decrypt_count++ / 256;
+
+    if (chacha20_poly1305_decrypt_with_nonce(nonce, hc->decrypt_key, ptr, AAD_LENGTH, 
+                ptr+AAD_LENGTH, decrypted_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH, (uint8_t*)decrypted) < 0) {
+        printf("[ERR] chacha20_poly1305_decrypt_with_nonce failed\n");
+        return 0;
+    }
+
+    *saveptr = ptr + decrypted_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH + AAD_LENGTH;
+
+    return decrypted_len;;
+}
+
+static void _encrypted_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len) 
+{
+    printf("_encrypted_msg_recv\n");
+    char* decrypted = calloc(1, len);
+    if (decrypted == NULL) {
+        printf("[ERR] calloc failded\n");
+        return;
+    }
+
+    struct hap_connection* hc = connection;
+    uint8_t* saveptr = NULL;
+    int decrypted_len = 0;
+
+    for (decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr); decrypted_len; 
+         decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr)) {
+        //printf("decrypted_len : %d\n", decrypted_len);
+            _plain_msg_recv(connection, nc, decrypted, decrypted_len);
+    }
+
+    free(decrypted);
+}
+
+
+static char* _encrypt(struct hap_connection* hc, char* msg, int len, int* encrypted_len)
+{
+#define AAD_LENGTH 2
+    char* encrypted = calloc(1, len + (len / 1024 + 1) * (AAD_LENGTH + CHACHA20_POLY1305_AUTH_TAG_LENGTH));
+    *encrypted_len = 0;
+
+    uint8_t nonce[12] = {0, 0, 0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0};
+    uint8_t* decrypted_ptr = (uint8_t*)msg;
+    uint8_t* encrypted_ptr = (uint8_t*)encrypted;
+
+    while (len > 0) {
+        int chunk_len = (len < 1024) ? len : 1024;
+        len -= chunk_len;
+
+        uint8_t aad[AAD_LENGTH];
+        aad[0] = chunk_len % 256;
+        aad[1] = chunk_len / 256;
+
+        memcpy(encrypted_ptr, aad, AAD_LENGTH);
+        encrypted_ptr += AAD_LENGTH;
+        *encrypted_len += AAD_LENGTH;
+
+        nonce[4] = hc->encrypt_count % 256;
+        nonce[5] = hc->encrypt_count++ / 256;
+
+        chacha20_poly1305_encrypt_with_nonce(nonce, hc->encrypt_key, aad, AAD_LENGTH, decrypted_ptr, chunk_len, encrypted_ptr);
+
+        decrypted_ptr += chunk_len;
+        encrypted_ptr += chunk_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH;
+        *encrypted_len += (chunk_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH);
+    }
+
+    return encrypted;
+}
+
+static void _encrypt_free(char* msg) 
+{
+    if (msg)
+        free(msg);
+}
+
+static void encrypt_send(struct mg_connection* nc, struct hap_connection* hc, char* res_header, int header_len, char* body, int body_len)
+{
+    char* plain_text = calloc(1, header_len + body_len + 64);
+    if (res_header)
+        memcpy(plain_text, res_header, header_len);
+
+    if (body)
+        memcpy(plain_text + header_len, body, body_len);
+
+    int encrypted_len = 0;
+    char* encrypted = _encrypt(hc, plain_text, strlen(plain_text), &encrypted_len);
+
+    free(plain_text);
+
+    mg_send(nc, encrypted, encrypted_len);
+    _encrypt_free(encrypted);
+}
+
+static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len)
 {
     struct hap_connection* hc = connection;
     struct hap_accessory* a = hc->a;
     struct http_message shm, *hm = &shm;
 
-    if (hc->pair_verified) {
-        printf("DERYPT\n");
-        //TODO DECRYPT DATA
-    }
-
-    mg_parse_http(msg, len, hm, 1);
+    char* http_raw_msg = msg;
+    int http_raw_msg_len = len;
+    mg_parse_http(http_raw_msg, http_raw_msg_len, hm, 1);
 
     char addr[32];
     mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
-                        MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
+            MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
     printf("[INFO] HTTP request from %s: %.*s %.*s\n", addr, (int) hm->method.len,
-           hm->method.p, (int) hm->uri.len, hm->uri.p);
+            hm->method.p, (int) hm->uri.len, hm->uri.p);
 
     if (strncmp(hm->uri.p, "/pair-setup", strlen("/pair-setup")) == 0) {
         if (hc->pair_setup == NULL) {
@@ -98,7 +203,6 @@ static void _hap_msg_recv(void* connection, struct mg_connection* nc, char* msg,
         char* res_body = NULL;
         int body_len = 0;
 
-
         pair_verify_do(hc->pair_verify, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len, &hc->pair_verified, hc->session_key);
 
         if (res_header) {
@@ -109,12 +213,64 @@ static void _hap_msg_recv(void* connection, struct mg_connection* nc, char* msg,
             mg_send(nc, res_body, body_len);
         }
 
+        if (hc->pair_verified) {
+            hkdf_key_get(HKDF_KEY_TYPE_CONTROL_READ, (uint8_t*)hc->session_key, CURVE25519_SECRET_LENGTH, hc->encrypt_key);
+            hkdf_key_get(HKDF_KEY_TYPE_CONTROL_WRITE, (uint8_t*)hc->session_key, CURVE25519_SECRET_LENGTH, hc->decrypt_key);
+        }
+
         pair_verify_do_free(res_header, res_body);
+    }
+    else if (strncmp(hm->uri.p, "/accessories", hm->uri.len) == 0) {
+        char* res_header = NULL;
+        int res_header_len = 0;
+
+        char* res_body = NULL;
+        int body_len = 0;
+
+        hap_acc_accessories_do(a, &res_header, &res_header_len, &res_body, &body_len);
+        encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
+        hap_acc_accessories_do_free(res_header, res_body);
+    }
+    else if (strncmp(hm->uri.p, "/characteristics", hm->uri.len) == 0) {
+        if (strncmp(hm->method.p, "GET", hm->method.len) == 0) {
+            printf("%.*s\n", (int)hm->query_string.len, hm->query_string.p);
+            char* query = hm->query_string.p;
+            int query_len = (int)hm->query_string.len;
+            char* res_header = NULL;
+            int res_header_len = 0;
+            char* res_body = NULL;
+            int body_len = 0;
+
+            hap_acc_characteristic_get(a, query, query_len, &res_header, &res_header_len, &res_body, &body_len);
+            encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
+            hap_acc_characteristic_get_free(res_header, res_body);
+        }
+        else if (strncmp(hm->method.p, "PUT", hm->method.len) == 0) {
+            char* res_header = NULL;
+            int res_header_len = 0;
+            char* res_body = NULL;
+            int body_len = 0;
+            hap_acc_characteristic_put(a, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
+            encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
+            hap_acc_characteristic_put_free(res_header, res_body);
+        }
     }
     else {
         printf("WHY????\n");
         printf("%.*s\n", (int) hm->uri.len, hm->uri.p);
         printf("%c%c%c%c\n", hm->uri.p[0], hm->uri.p[1], hm->uri.p[2], hm->uri.p[3]);
+    }
+}
+
+static void _msg_recv(void* connection, struct mg_connection* nc, char* msg, int len)
+{
+    struct hap_connection* hc = connection;
+    
+    if (hc->pair_verified) {
+        _encrypted_msg_recv(connection, nc, msg, len);
+    }
+    else {
+        _plain_msg_recv(connection, nc, msg, len);
     }
 }
 
@@ -142,7 +298,6 @@ static void _hap_connection_accept(void* accessory, struct mg_connection* nc)
     hc->pair_verified = false;
 
     nc->user_data = hc;
-
 
     list_add(&hc->list, &a->connections);
 }
@@ -180,12 +335,16 @@ static void _accessory_ltk_load(struct hap_accessory* a)
     }
 }
 
-void* hap_accessory_add(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,
-        int port, uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback)
+void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,
+                        int port, uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback)
 {
+    if (_hap_desc->nr_accessory != 0) {
+        return NULL;
+    }
+
     struct hap_accessory* a = calloc(1, sizeof(struct hap_accessory));
     if (a == NULL) {
-        printf("[ERR] malloc failed. size:%d\n", sizeof(struct hap_accessory));
+        printf("[ERR] calloc failed. size:%d\n", sizeof(struct hap_accessory));
         return NULL;
     }
 
@@ -200,12 +359,14 @@ void* hap_accessory_add(char* name, char* id, char* pincode, char* vendor, enum 
     a->callback_arg = callback_arg;
 
     INIT_LIST_HEAD(&a->connections);
+    INIT_LIST_HEAD(&a->attr_accessories);
 
     _accessory_ltk_load(a);
     a->iosdevices = iosdevice_pairings_init(a->id);
     a->advertise = advertise_accessory_add(a->name, a->id, a->vendor, a->port, a->config_number, a->category,
                                            ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
     a->bind = httpd_bind(port, a);
+    _hap_desc->nr_accessory = 1;
 
     return a;
 }
@@ -233,8 +394,18 @@ void hap_init(void)
     struct httpd_ops httpd_ops = {
         .accept = _hap_connection_accept,
         .close = _hap_connection_close,
-        .recv = _hap_msg_recv,
+        .recv = _msg_recv,
     };
 
     httpd_init(&httpd_ops);
+}
+
+void* hap_attr_accessory_add(void* acc_instance)
+{
+    return hap_acc_accessory_add(acc_instance);
+}
+void* hap_attr_service_and_characteristics_add(void* acc_instance, void* _attr_a,
+        enum hap_service_type type, struct hap_attr_character* cs, int nr_cs) 
+{
+    return hap_acc_service_and_characteristics_add(acc_instance, _attr_a, type, cs, nr_cs);
 }

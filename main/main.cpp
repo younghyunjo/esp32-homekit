@@ -11,7 +11,6 @@
 #include "Arduino.h"
 #include "hap.h"
 #include "srp.h"
-#include "pairing.h"
 #include "nvs.h"
 #include "advertise.h"
 #include "httpd.h"
@@ -20,7 +19,7 @@
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
-#if 0
+#if 1
 #define EXAMPLE_WIFI_SSID "YOUNGHYUN"
 #define EXAMPLE_WIFI_PASS "coldplay"
 #endif
@@ -28,7 +27,7 @@
 #define EXAMPLE_WIFI_SSID "unibj"
 #define EXAMPLE_WIFI_PASS "12673063"
 #endif
-#if 1
+#if 0
 #define EXAMPLE_WIFI_SSID "NO_RUN"
 #define EXAMPLE_WIFI_PASS "1qaz2wsx"
 #endif
@@ -40,21 +39,51 @@ static EventGroupHandle_t wifi_event_group;
    but we only care about one event - are we connected
    to the AP with an IP? */
 const int CONNECTED_BIT = BIT0;
+void* a;
 
-/*
-struct httpd_restapi restapi[] = {
-    {.uri = (char*)"/pair-setup",
-     .method = (char*)"POST",
-     .ops = pairing_over_ip_setup,
-     .post_response = pairing_over_ip_free,
-    },
-    {.uri = (char*)"/pair-verify",
-     .method = (char*)"POST",
-     .ops = pairing_over_ip_verify,
-     .post_response = pairing_over_ip_free,
-    },
-};
-*/
+int led = 0;
+void* led_read(void* arg)
+{
+    printf("LED\n");
+    if (led)
+        return (void*)true;
+    else
+        return (void*)false;
+}
+
+void led_write(void* arg, void* value, int len)
+{
+    printf("LED WRITE. %d\n", (int)value);
+
+    led = (int)value;
+    return;
+}
+
+void led_notify(void* arg, void* ev_handle, bool enable)
+{
+}
+
+void hap_object_init(void* arg)
+{
+    void* attr_a = hap_attr_accessory_add(a);
+    struct hap_attr_character cs[] = {
+        {HAP_CHARACTER_IDENTIFY, (void*)true, NULL, NULL, NULL, NULL, 0},
+        {HAP_CHARACTER_MANUFACTURER, (void*)"Hack", NULL, NULL, NULL, NULL, 0},
+        {HAP_CHARACTER_MODEL, (void*)"A1234", NULL, NULL, NULL, NULL, 0},
+        {HAP_CHARACTER_NAME, (void*)"Neell", NULL, NULL, NULL, NULL, 0},
+        {HAP_CHARACTER_SERIAL_NUMBER, (void*)"0123", NULL, NULL, NULL, NULL, 0},
+        {HAP_CHARACTER_FIRMWARE_REVISION, (void*)"100.1.1", NULL, NULL, NULL, NULL, 0},
+    };
+
+    hap_attr_service_and_characteristics_add(a, attr_a, HAP_SERVICE_ACCESSORY_INFORMATION, cs, 5);
+
+    struct hap_attr_character cc[] = {
+        {HAP_CHARACTER_NAME, (void*)"led", NULL, NULL, NULL, NULL, 0},
+        {HAP_CHARACTER_ON, (void*)1, NULL, led_read, led_write, led_notify, 0},
+    };
+
+    hap_attr_service_and_characteristics_add(a, attr_a, HAP_SERVICE_SWITCHS, cc, 2);
+}
 
 void WiFiEvent(WiFiEvent_t event)
 {
@@ -62,21 +91,22 @@ void WiFiEvent(WiFiEvent_t event)
 
     if (event == SYSTEM_EVENT_STA_GOT_IP) {
         printf("WiFi connected\n");
-//        advertise_accessory_add("hello", "12:34:11:22:33:44", "vendor", 811, 1, HAP_ACCESSORY_CATEGORY_FAN, ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
 
         hap_init();
 
+        uint8_t mac[6];
+        esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
+        char accessory_id[32] = {0,};
+        sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         hap_accessory_callback_t callback;
-        hap_accessory_add("Neell", "10:34:11:22:33:44", "053-58-197", "vendor", HAP_ACCESSORY_CATEGORY_FAN, 811, 1, NULL, &callback);
-        //httpd_start(661, restapi, ARRAY_SIZE(restapi));
+        callback.hap_object_init = hap_object_init;
+        a = hap_accessory_register("Neell", accessory_id, "053-58-197", "Hack", HAP_ACCESSORY_CATEGORY_OTHER, 811, 2, NULL, &callback);
     }
     else if (event == SYSTEM_EVENT_STA_DISCONNECTED) {
         Serial.println("WiFi lost connection");
     }
-
 }
 
-extern void pairing_test(void);
 extern "C" void app_main()
 {
     ESP_ERROR_CHECK( nvs_flash_init() );
@@ -85,25 +115,4 @@ extern "C" void app_main()
 
     WiFi.onEvent(WiFiEvent);
     WiFi.begin(EXAMPLE_WIFI_SSID, EXAMPLE_WIFI_PASS);
-
-    uint8_t mac[6];
-    esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
-    char accessory_id[32] = {0,};
-    sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    printf("|%s|\n", accessory_id);
-    accessory_id[9] = 0x39;
-
-#if 0
-    struct pairing_db_ops ops = {
-        .get = nvs_get,
-        .set = nvs_set,
-        .erase = nvs_erase,
-    };
-#endif
-
-
-
-//    pairing_init("053-58-197", accessory_id, &ops);
-//
-//    pairing_test();
 }
