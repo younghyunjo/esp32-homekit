@@ -20,7 +20,6 @@ static void _httpd_task(void* arg) {
 }
 
 static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_data) {
-    printf("USER_DATA:%d EV:%d\n", (int)user_data, ev);
     switch (ev)     {
         case MG_EV_ACCEPT: {
             if (_ops.accept) {
@@ -38,26 +37,21 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_
             if (_ops.recv) {
                 _ops.recv(user_data, nc, nc->recv_mbuf.buf, nc->recv_mbuf.len);
             }
-#if 0
-            for (int i=0; i<len ;i++) {
-              printf("%x \n", nc->recv_mbuf.buf[i]);
-          }
-
-          char addr[32];
-          mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
-                              MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);void httpd_start(int port, struct httpd_restapi* api, int nr_restapi);
-#endif
             break;
         }
-
         case MG_EV_POLL: {
             break;
         }
         case MG_EV_CLOSE: {
+            printf("MG_EV_CLOSE");
             printf("Connection %p closed\n", nc);
             if (_ops.close) {
                 _ops.close(user_data, nc);
             }
+            break;
+        }
+        case MG_EV_SEND: {
+            printf("MG_EV_SEND\n");
             break;
         }
         default: {
