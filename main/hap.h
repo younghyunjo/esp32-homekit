@@ -195,8 +195,8 @@ typedef struct {
     void (*hap_object_init)(void* arg);
 } hap_accessory_callback_t;
 
-void* hap_attr_accessory_add(void* acc_instance);
-void* hap_attr_service_and_characteristics_add(void* acc_instance, void* _attr_a,
+void* hap_accessory_add(void* acc_instance);
+void hap_service_and_characteristics_add(void* acc_instance, void* accssories_objects,
         enum hap_service_type type, struct hap_characteristic* cs, int nr_cs);
 
 void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,

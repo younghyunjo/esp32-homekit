@@ -408,12 +408,17 @@ void hap_init(void)
     httpd_init(&httpd_ops);
 }
 
-void* hap_attr_accessory_add(void* acc_instance)
+void* hap_accessory_add(void* acc_instance)
 {
-    return hap_acc_accessory_add(acc_instance);
+    struct hap_accessory* a = acc_instance;
+
+    a->accessories_ojbects = hap_acc_accessory_add(acc_instance);
+
+    return a->accessories_ojbects;
 }
-void* hap_attr_service_and_characteristics_add(void* acc_instance, void* _attr_a,
+
+void hap_service_and_characteristics_add(void* acc_instance, void* acc_obj,
         enum hap_service_type type, struct hap_characteristic* cs, int nr_cs) 
 {
-    return hap_acc_service_and_characteristics_add(acc_instance, _attr_a, type, cs, nr_cs);
+    hap_acc_service_and_characteristics_add(acc_obj, type, cs, nr_cs);
 }

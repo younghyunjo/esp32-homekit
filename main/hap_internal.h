@@ -45,6 +45,7 @@ struct hap_accessory {
     cJSON* attr_accessories_json;
     void* callback_arg;
     hap_accessory_callback_t callback;
+    void* accessories_ojbects;
 };
 
 struct hap_connection {

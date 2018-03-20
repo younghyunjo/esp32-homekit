@@ -86,7 +86,7 @@ void led_notify(void* arg, void* ev_handle, bool enable)
 
 void hap_object_init(void* arg)
 {
-    void* attr_a = hap_attr_accessory_add(a);
+    void* accessory_object = hap_accessory_add(a);
     struct hap_characteristic cs[] = {
         {HAP_CHARACTER_IDENTIFY, (void*)true, NULL, NULL, NULL, NULL},
         {HAP_CHARACTER_MANUFACTURER, (void*)"Hack", NULL, NULL, NULL, NULL},
@@ -96,14 +96,14 @@ void hap_object_init(void* arg)
         {HAP_CHARACTER_FIRMWARE_REVISION, (void*)"100.1.1", NULL, NULL, NULL, NULL},
     };
 
-    hap_attr_service_and_characteristics_add(a, attr_a, HAP_SERVICE_ACCESSORY_INFORMATION, cs, 5);
+    hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_ACCESSORY_INFORMATION, cs, 5);
 
     struct hap_characteristic cc[] = {
         {HAP_CHARACTER_NAME, (void*)"led", NULL, NULL, NULL, NULL},
         {HAP_CHARACTER_ON, (void*)1, NULL, led_read, led_write, led_notify},
     };
 
-    hap_attr_service_and_characteristics_add(a, attr_a, HAP_SERVICE_SWITCHS, cc, 2);
+    hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_SWITCHS, cc, 2);
 }
 
 void WiFiEvent(WiFiEvent_t event)

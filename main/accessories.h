@@ -15,7 +15,7 @@ int hap_acc_accessories_do(struct hap_accessory* a, char** res_header, int* res_
 void hap_acc_accessories_do_free(char* res_header, char* res_body);
 
 void* hap_acc_accessory_add(void* acc_instance);
-void* hap_acc_service_and_characteristics_add(void* acc_instance, void* _attr_a,
+void* hap_acc_service_and_characteristics_add(void* _attr_a,
         enum hap_service_type type, struct hap_attr_character* cs, int nr_cs); 
 
 #ifdef __cplusplus

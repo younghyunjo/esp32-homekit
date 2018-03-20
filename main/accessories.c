@@ -38,9 +38,9 @@ struct hap_attr_service {
 
 struct hap_attr_characteristic {
     int iid;
+
     enum hap_characteristic_type type;
     void* value;
-
     void* callback_arg;
     void* (*read)(void* arg);
     void (*write)(void* arg, void* value, int value_len);
@@ -360,10 +360,9 @@ void* hap_acc_accessory_add(void* acc_instance)
     return (void*)attr_a;
 }
 
-void* hap_acc_service_and_characteristics_add(void* acc_instance, void* _attr_a,
+void* hap_acc_service_and_characteristics_add(void* _attr_a,
         enum hap_service_type type, struct hap_characteristic* cs, int nr_cs) 
 {
-    struct hap_accessory* a = acc_instance;
     struct hap_attr_accessory* attr_a = _attr_a;
     struct hap_attr_service* attr_s = calloc(1, sizeof(struct hap_attr_service) + sizeof(struct hap_attr_characteristic) * nr_cs);
     attr_s->iid = ++attr_a->last_iid;
