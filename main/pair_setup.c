@@ -6,7 +6,7 @@
 #include "concat.h"
 #include "curve25519.h"
 #include "ed25519.h"
-#include "hap_types.h"
+#include "hap_internal.h"
 #include "hkdf.h"
 #include "iosdevice.h"
 #include "pair_error.h"
@@ -46,7 +46,7 @@ static int _subtlv_decrypt(enum hkdf_key_type htype,
     hkdf_key_get(htype, srp_key, SRP_SESSION_KEY_LENGTH, subtlv_key);
 
     *subtlv = malloc(encrypted_tlv->length);
-    int err = chacha20_poly1305_decrypt(cptype, subtlv_key, 
+    int err = chacha20_poly1305_decrypt(cptype, subtlv_key, NULL, 0,
             (uint8_t*)&encrypted_tlv->value, encrypted_tlv->length, *subtlv);
     tlv_decoded_item_free(encrypted_tlv);
     if (err < 0) {
@@ -151,7 +151,7 @@ static int _acc_m6_subtlv(uint8_t* srp_key, char* acc_id, uint8_t* acc_ltk_publi
 
     uint8_t subtlv_key[HKDF_KEY_LEN] = {0,};
     hkdf_key_get(HKDF_KEY_TYPE_PAIR_SETUP_ENCRYPT, srp_key, SRP_SESSION_KEY_LENGTH, subtlv_key);
-    chacha20_poly1305_encrypt(CHACHA20_POLY1305_TYPE_PS06, subtlv_key, acc_plain_subtlv, acc_plain_subtlv_length, *acc_subtlv, ((uint8_t*)*acc_subtlv) + acc_plain_subtlv_length);
+    chacha20_poly1305_encrypt(CHACHA20_POLY1305_TYPE_PS06, subtlv_key, NULL, 0, acc_plain_subtlv, acc_plain_subtlv_length, *acc_subtlv);
     
 #if 0
     printf("ACC SUBTLV LEN:%d\n", *acc_subtlv_length);

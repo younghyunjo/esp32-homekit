@@ -3,6 +3,7 @@
 #include <esp_log.h>
 
 #include "hap.h"
+#include "hap_internal.h"
 #include "tlv.h"
 
 #define TAG "PAIR_ERROR"

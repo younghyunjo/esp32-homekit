@@ -5,7 +5,6 @@
 #include <mdns.h>
 
 #include "advertise.h"
-#include "hap_types.h"
 
 #define HAP_SERVICE "_hap"
 #define HAP_PROTO "_tcp"
@@ -102,7 +101,7 @@ void* advertise_accessory_add(char* name, char* id, char* host, int port, uint32
     mdns_service_add(name, HAP_SERVICE, HAP_PROTO, port, NULL, 0);
     _service_txt_set(adv);
 
-    return 0;
+    return adv;
 }
 
 void advertise_accessory_remove(void* adv_instance) {

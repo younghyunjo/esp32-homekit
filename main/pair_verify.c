@@ -7,7 +7,7 @@
 #include "concat.h"
 #include "curve25519.h"
 #include "ed25519.h"
-#include "hap_types.h"
+#include "hap_internal.h"
 #include "hkdf.h"
 #include "iosdevice.h"
 #include "pair_error.h"
@@ -103,7 +103,7 @@ static int _verify_m2(struct pair_verify* pv,
 
     uint8_t subtlv_key[HKDF_KEY_LEN] = {0,};
     hkdf_key_get(HKDF_KEY_TYPE_PAIR_VERIFY_ENCRYPT, session_key, CURVE25519_SECRET_LENGTH, subtlv_key);
-    chacha20_poly1305_encrypt(CHACHA20_POLY1305_TYPE_PV02, subtlv_key, acc_plain_subtlv, acc_plain_subtlv_length, acc_subtlv, acc_subtlv + acc_plain_subtlv_length);
+    chacha20_poly1305_encrypt(CHACHA20_POLY1305_TYPE_PV02, subtlv_key, NULL, 0, acc_plain_subtlv, acc_plain_subtlv_length, acc_subtlv);
 
     free(acc_plain_subtlv);
 
@@ -144,7 +144,7 @@ static int _verify_m4(struct pair_verify* pv,
     uint8_t subtlv_key[HKDF_KEY_LEN] = {0,};
     hkdf_key_get(HKDF_KEY_TYPE_PAIR_VERIFY_ENCRYPT, pv->session_key, CURVE25519_SECRET_LENGTH, subtlv_key);
     uint8_t* subtlv = malloc(encrypted_tlv->length);
-    chacha20_poly1305_decrypt(CHACHA20_POLY1305_TYPE_PV03, subtlv_key, (uint8_t*)&encrypted_tlv->value, encrypted_tlv->length, subtlv);
+    chacha20_poly1305_decrypt(CHACHA20_POLY1305_TYPE_PV03, subtlv_key, NULL, 0, (uint8_t*)&encrypted_tlv->value, encrypted_tlv->length, subtlv);
 
     tlv_decoded_item_free(encrypted_tlv);
 
@@ -204,7 +204,7 @@ int pair_verify_do(void* _pv, const char* req_body, int req_body_len,
         error = _verify_m4(pv, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len); 
         if (error == 0) {
             *verified = true;
-            memcpy(session_key, pv->session_key, sizeof(pv->session_key));
+            memcpy(session_key, pv->session_key, CURVE25519_SECRET_LENGTH);
         }
         break;
     default:
