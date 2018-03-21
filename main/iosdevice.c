@@ -15,7 +15,7 @@ struct iosdevice_pairings {
         int slot;
         char id[IOSDEVICE_ID_LEN];
         char key[ED25519_PUBLIC_KEY_LENGTH];
-    } iosdevices[IOSDEVICE_PER_ACCESSORY_MAX]
+    } iosdevices[IOSDEVICE_PER_ACCESSORY_MAX];
 };
 
 static int _pairing_match(void* handle, char id[], char key[])
