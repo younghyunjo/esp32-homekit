@@ -183,18 +183,19 @@ enum hap_characteristic_type {
 
 struct hap_characteristic {
     enum hap_characteristic_type type;
-    void* value;
+    void* initial_value;
 
     void* callback_arg;
     void* (*read)(void* arg);
     void (*write)(void* arg, void* value, int value_len);
-    void (*notification)(void* arg, void* ev_handle, bool enable);
+    void (*event)(void* arg, void* ev_handle, bool enable);
 };
 
 typedef struct {
     void (*hap_object_init)(void* arg);
 } hap_accessory_callback_t;
 
+int hap_event_response(void* acc_instance, void* ev_handle, void* value);
 void* hap_accessory_add(void* acc_instance);
 void hap_service_and_characteristics_add(void* acc_instance, void* accssories_objects,
         enum hap_service_type type, struct hap_characteristic* cs, int nr_cs);

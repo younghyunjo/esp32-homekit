@@ -66,10 +66,8 @@ void led_write(void* arg, void* value, int len)
         //TODO TURN OFF LED
     }
 
-    /*
     if (_ev_handle)
-        hap_notification_response(a, ev_handle, (void*)led);
-    */
+        hap_event_response(a, _ev_handle, (void*)led);
 
     return;
 }
@@ -121,7 +119,7 @@ void WiFiEvent(WiFiEvent_t event)
         sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         hap_accessory_callback_t callback;
         callback.hap_object_init = hap_object_init;
-        a = hap_accessory_register("Neell", accessory_id, "053-58-197", "Hack", HAP_ACCESSORY_CATEGORY_OTHER, 811, 2, NULL, &callback);
+        a = hap_accessory_register((char*)"Neell", accessory_id, (char*)"053-58-197", (char*)"Hack", HAP_ACCESSORY_CATEGORY_OTHER, 811, 2, NULL, &callback);
     }
     else if (event == SYSTEM_EVENT_STA_DISCONNECTED) {
         Serial.println("WiFi lost connection");

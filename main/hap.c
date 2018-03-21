@@ -22,19 +22,6 @@ struct hap {
     int nr_accessory;
 };
 
-static const char* header_204_fmt = 
-    "HTTP/1.1 204 No Content\r\n"
-    "Connection: keep-alive\r\n"
-    "Content-type: application/hap+json\r\n"
-    "\r\n";
-
-static const char* header_200_fmt = 
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Length: %d\r\n"
-    "Connection: keep-alive\r\n"
-    "Content-type: application/hap+json\r\n"
-    "\r\n";
-
 static struct hap* _hap_desc;
 
 static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len);
@@ -234,7 +221,7 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
     else if (strncmp(hm->uri.p, "/characteristics", hm->uri.len) == 0) {
         if (strncmp(hm->method.p, "GET", hm->method.len) == 0) {
             printf("%.*s\n", (int)hm->query_string.len, hm->query_string.p);
-            char* query = hm->query_string.p;
+            char* query = (char*)hm->query_string.p;
             int query_len = (int)hm->query_string.len;
             char* res_header = NULL;
             int res_header_len = 0;
@@ -250,7 +237,8 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             int res_header_len = 0;
             char* res_body = NULL;
             int body_len = 0;
-            hap_acc_characteristic_put(a, (void*)hc, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
+
+            hap_acc_characteristic_put(a, (void*)hc, (char*)hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
             encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
             hap_acc_characteristic_put_free(res_header, res_body);
         }
@@ -284,6 +272,10 @@ static void _hap_connection_close(void* connection, struct mg_connection* nc)
     if (hc->pair_verify)
         pair_verify_cleanup(hc->pair_setup);
 
+    if (!list_empty(&hc->event_head)) {
+        hap_acc_event_free(hc);
+    }
+
     list_del(&hc->list);
     free(hc);
 }
@@ -296,6 +288,7 @@ static void _hap_connection_accept(void* accessory, struct mg_connection* nc)
     hc->nc = nc;
     hc->a = a;
     hc->pair_verified = false;
+    INIT_LIST_HEAD(&hc->event_head);
 
     nc->user_data = hc;
 
@@ -335,12 +328,35 @@ static void _accessory_ltk_load(struct hap_accessory* a)
     }
 }
 
-int hap_notification_response(void* acc_instance, void* ev_handle, void* value)
+int hap_event_response(void* acc_instance, void* ev_handle, void* value)
 {
-    struct hap_accessory* a = acc_instance;
-    struct hap_connection* hc = ev_handle;
+    struct hap_event* ev = ev_handle;
+
+    char* res_header = NULL;
+    int res_header_len = 0;
+    char* res_body = NULL;
+    int body_len = 0;
+
+    hap_acc_event_response(ev, value, &res_header, &res_header_len, &res_body, &body_len);
+    encrypt_send(ev->hc->nc, ev->hc, res_header, res_header_len, res_body, body_len);
+    hap_acc_event_response_free(res_header, res_body);
 
     return 0;
+}
+
+void* hap_accessory_add(void* acc_instance)
+{
+    struct hap_accessory* a = acc_instance;
+
+    a->accessories_ojbects = hap_acc_accessory_add(acc_instance);
+
+    return a->accessories_ojbects;
+}
+
+void hap_service_and_characteristics_add(void* acc_instance, void* acc_obj,
+        enum hap_service_type type, struct hap_characteristic* cs, int nr_cs) 
+{
+    hap_acc_service_and_characteristics_add(acc_obj, type, cs, nr_cs);
 }
 
 void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,
@@ -406,19 +422,4 @@ void hap_init(void)
     };
 
     httpd_init(&httpd_ops);
-}
-
-void* hap_accessory_add(void* acc_instance)
-{
-    struct hap_accessory* a = acc_instance;
-
-    a->accessories_ojbects = hap_acc_accessory_add(acc_instance);
-
-    return a->accessories_ojbects;
-}
-
-void hap_service_and_characteristics_add(void* acc_instance, void* acc_obj,
-        enum hap_service_type type, struct hap_characteristic* cs, int nr_cs) 
-{
-    hap_acc_service_and_characteristics_add(acc_obj, type, cs, nr_cs);
 }
