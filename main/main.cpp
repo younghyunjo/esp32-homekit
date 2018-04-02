@@ -18,12 +18,11 @@
 
 #include <WiFi.h>
 
+#define ACCESSORY_NAME  "SWITCH"
+#define MANUFACTURER_NAME   "YOUNGHYUN"
+#define MODEL_NAME  "ESP32_ACC"
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
-#if 0
-#define EXAMPLE_WIFI_SSID "YOUNGHYUN"
-#define EXAMPLE_WIFI_PASS "coldplay"
-#endif
 #if 1
 #define EXAMPLE_WIFI_SSID "unibj"
 #define EXAMPLE_WIFI_PASS "12673063"
@@ -93,24 +92,18 @@ void hap_object_init(void* arg)
     void* accessory_object = hap_accessory_add(a);
     struct hap_characteristic cs[] = {
         {HAP_CHARACTER_IDENTIFY, (void*)true, NULL, identify_read, NULL, NULL},
-        {HAP_CHARACTER_MANUFACTURER, (void*)"Hack", NULL, NULL, NULL, NULL},
-        {HAP_CHARACTER_MODEL, (void*)"A1234", NULL, NULL, NULL, NULL},
-        {HAP_CHARACTER_NAME, (void*)"Neell", NULL, NULL, NULL, NULL},
-        {HAP_CHARACTER_SERIAL_NUMBER, (void*)"0123", NULL, NULL, NULL, NULL},
+        {HAP_CHARACTER_MANUFACTURER, (void*)MANUFACTURER_NAME, NULL, NULL, NULL, NULL},
+        {HAP_CHARACTER_MODEL, (void*)MODEL_NAME, NULL, NULL, NULL, NULL},
+        {HAP_CHARACTER_NAME, (void*)ACCESSORY_NAME, NULL, NULL, NULL, NULL},
+        {HAP_CHARACTER_SERIAL_NUMBER, (void*)"0123456789", NULL, NULL, NULL, NULL},
         {HAP_CHARACTER_FIRMWARE_REVISION, (void*)"1.0", NULL, NULL, NULL, NULL},
     };
+    hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_ACCESSORY_INFORMATION, cs, ARRAY_SIZE(cs));
 
-    hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_ACCESSORY_INFORMATION, cs, 6);
-
-#if 1
     struct hap_characteristic cc[] = {
         {HAP_CHARACTER_ON, (void*)led, NULL, led_read, led_write, led_notify},
-        //{HAP_CHARACTER_CONTACT_SENSOR_STATE, 0, NULL, led_read, NULL, led_notify},
     };
-
-    //hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_CONTACT_SENSOR, cc, 1);
-    hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_SWITCHS, cc, 1);
-#endif
+    hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_SWITCHS, cc, ARRAY_SIZE(cc));
 }
 
 void WiFiEvent(WiFiEvent_t event)
@@ -128,7 +121,7 @@ void WiFiEvent(WiFiEvent_t event)
         sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         hap_accessory_callback_t callback;
         callback.hap_object_init = hap_object_init;
-        a = hap_accessory_register((char*)"Neell", accessory_id, (char*)"053-58-197", (char*)"Hack", HAP_ACCESSORY_CATEGORY_OTHER, 811, 1, NULL, &callback);
+        a = hap_accessory_register((char*)ACCESSORY_NAME, accessory_id, (char*)"053-58-197", (char*)MANUFACTURER_NAME, HAP_ACCESSORY_CATEGORY_OTHER, 811, 1, NULL, &callback);
     }
     else if (event == SYSTEM_EVENT_STA_DISCONNECTED) {
         Serial.println("WiFi lost connection");
