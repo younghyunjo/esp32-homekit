@@ -193,7 +193,6 @@ int pair_verify_do(void* _pv, const char* req_body, int req_body_len,
 {
     struct pair_verify* pv = _pv;
     uint8_t state = _state_get((uint8_t*)req_body, req_body_len);
-    printf("[PAIR-VERIFY] STATE:%d", state);
 
     int error = 0;
     switch (state) {
