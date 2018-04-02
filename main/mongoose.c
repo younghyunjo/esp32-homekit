@@ -6374,7 +6374,8 @@ void mg_http_handler(struct mg_connection *nc, int ev,
     /* TODO(alashkin): refactor this ifelseifelseifelseifelse */
     if ((req_len < 0 ||
          (req_len == 0 && io->len >= MG_MAX_HTTP_REQUEST_SIZE))) {
-      DBG(("invalid request"));
+      DBG(("invalid request. %d %d", req_len, io->len));
+      mbuf_remove(io, io->len);
       //nc->flags |= MG_F_CLOSE_IMMEDIATELY;
     } else if (req_len == 0) {
       /* Do nothing, request is not yet fully buffered */
