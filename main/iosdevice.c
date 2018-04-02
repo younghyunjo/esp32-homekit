@@ -120,6 +120,7 @@ void* iosdevice_pairings_init(char accessory_id[])
         memset(nvs_key, 0, sizeof(nvs_key));
         memset(value, 0, sizeof(value));
         sprintf(nvs_key, "%sD%d", ipairings->id, i);
+        //nvs_erase(nvs_key);
         if (nvs_get(nvs_key, value, IOSDEVICE_ID_LEN + ED25519_PUBLIC_KEY_LENGTH) == 0) {
             ipairings->iosdevices[i].slot = -1;
             continue;
@@ -129,6 +130,7 @@ void* iosdevice_pairings_init(char accessory_id[])
         ipairings->iosdevices[i].slot = i;
 
         memcpy(ipairings->iosdevices[i].id, value, IOSDEVICE_ID_LEN);
+        printf("[IOSDEVICE] ID:%.*s\n", IOSDEVICE_ID_LEN, ipairings->iosdevices[i].id);
         memcpy(ipairings->iosdevices[i].key, value+IOSDEVICE_ID_LEN, ED25519_PUBLIC_KEY_LENGTH);
     }
 
