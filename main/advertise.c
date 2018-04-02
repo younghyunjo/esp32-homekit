@@ -34,7 +34,6 @@ static void _service_txt_set(struct advertiser* adv) {
     sprintf(adv->service_txt_ci, "%d", adv->category);
 
     mdns_txt_item_t hap_service_txt[] = {
-        {"dummy", "dummy"},
         {"c#", adv->service_txt_c_sharp},
         {"ff", "0"},
         {"pv", "1.0"},
