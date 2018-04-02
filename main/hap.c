@@ -17,6 +17,7 @@
 #include "nvs.h"
 #include "pair_setup.h"
 #include "pair_verify.h"
+#include "pairings.h"
 
 struct hap {
     int nr_accessory;
@@ -31,19 +32,22 @@ static int _decrypt(struct hap_connection* hc, char* encrypted, int len, char* d
 #define AAD_LENGTH 2
     uint8_t* ptr;
     if (*saveptr == NULL) {
-        hc->decrypt_count = 0;
         ptr = (uint8_t*)encrypted;
     }
     else if (*saveptr < encrypted + len) {
         ptr = *saveptr;
     }
+    else if (*saveptr == encrypted + len){
+        printf("[HAP][INFO] _decrypt end %d\n", (int)((char*)*saveptr - encrypted));
+        return 0;
+    }
     else {
-        printf("_decrypt end\n");
+        printf("BUG? BUG? BUG?\n");
         return 0;
     }
 
     int decrypted_len = ptr[1] * 256 + ptr[0];
-    uint8_t nonce[12] = {0, 0, 0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0};
+    uint8_t nonce[12] = {0,};
     nonce[4] = hc->decrypt_count % 256;
     nonce[5] = hc->decrypt_count++ / 256;
 
@@ -60,7 +64,6 @@ static int _decrypt(struct hap_connection* hc, char* encrypted, int len, char* d
 
 static void _encrypted_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len) 
 {
-    printf("_encrypted_msg_recv\n");
     char* decrypted = calloc(1, len);
     if (decrypted == NULL) {
         printf("[ERR] calloc failded\n");
@@ -73,8 +76,7 @@ static void _encrypted_msg_recv(void* connection, struct mg_connection* nc, char
 
     for (decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr); decrypted_len; 
          decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr)) {
-        //printf("decrypted_len : %d\n", decrypted_len);
-            _plain_msg_recv(connection, nc, decrypted, decrypted_len);
+        _plain_msg_recv(connection, nc, decrypted, decrypted_len);
     }
 
     free(decrypted);
@@ -84,13 +86,12 @@ static void _encrypted_msg_recv(void* connection, struct mg_connection* nc, char
 static char* _encrypt(struct hap_connection* hc, char* msg, int len, int* encrypted_len)
 {
 #define AAD_LENGTH 2
-    char* encrypted = calloc(1, len + (len / 1024 + 1) * (AAD_LENGTH + CHACHA20_POLY1305_AUTH_TAG_LENGTH));
+    char* encrypted = calloc(1, len + (len / 1024 + 1) * (AAD_LENGTH + CHACHA20_POLY1305_AUTH_TAG_LENGTH) + 1);
     *encrypted_len = 0;
 
-    uint8_t nonce[12] = {0, 0, 0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0};
+    uint8_t nonce[12] = {0,};
     uint8_t* decrypted_ptr = (uint8_t*)msg;
     uint8_t* encrypted_ptr = (uint8_t*)encrypted;
-
     while (len > 0) {
         int chunk_len = (len < 1024) ? len : 1024;
         len -= chunk_len;
@@ -215,12 +216,17 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
         int body_len = 0;
 
         hap_acc_accessories_do(a, &res_header, &res_header_len, &res_body, &body_len);
+#if 0
+        {
+            printf("------RESPONSE-----\n");
+            printf("%s%s\n", res_header, res_body);
+        }
+#endif
         encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
         hap_acc_accessories_do_free(res_header, res_body);
     }
     else if (strncmp(hm->uri.p, "/characteristics", hm->uri.len) == 0) {
         if (strncmp(hm->method.p, "GET", hm->method.len) == 0) {
-            printf("%.*s\n", (int)hm->query_string.len, hm->query_string.p);
             char* query = (char*)hm->query_string.p;
             int query_len = (int)hm->query_string.len;
             char* res_header = NULL;
@@ -229,6 +235,14 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             int body_len = 0;
 
             hap_acc_characteristic_get(a, query, query_len, &res_header, &res_header_len, &res_body, &body_len);
+#if 0
+            {
+                printf("------REQUEST-----\n");
+                printf("%.*s\n", (int)hm->query_string.len, hm->query_string.p);
+                printf("------RESPONSE-----\n");
+                printf("%s%s\n", res_header, res_body);
+            }
+#endif
             encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
             hap_acc_characteristic_get_free(res_header, res_body);
         }
@@ -239,14 +253,44 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             int body_len = 0;
 
             hap_acc_characteristic_put(a, (void*)hc, (char*)hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
+#if 0
+            {
+                printf("------REQUEST-----");
+                printf("%.*s\n", (int)hm->query_string.len, hm->query_string.p);
+                printf("%.*s\n", (int)hm->body.len, (char*)hm->body.p);
+                printf("------RESPONSE-----\n");
+                printf("%s", res_header);
+            }
+#endif
             encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
             hap_acc_characteristic_put_free(res_header, res_body);
         }
     }
+    else if (strncmp(hm->uri.p, "/pairings", hm->uri.len) == 0) {
+        char* res_header = NULL;
+        int res_header_len = 0;
+
+        char* res_body = NULL;
+        int body_len = 0;
+
+        pairings_do(hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
+        if (res_header) {
+            mg_send(nc, res_header, res_header_len);
+        }
+
+        if (res_body) {
+            mg_send(nc, res_body, body_len);
+        }
+        encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
+        pairings_do_free(res_header, res_body);
+    }
     else {
+        printf("[HAP][INFO] NOT HANDLED\n");
+#if 0
         printf("WHY????\n");
         printf("%.*s\n", (int) hm->uri.len, hm->uri.p);
         printf("%c%c%c%c\n", hm->uri.p[0], hm->uri.p[1], hm->uri.p[2], hm->uri.p[3]);
+#endif
     }
 }
 
@@ -339,6 +383,8 @@ int hap_event_response(void* acc_instance, void* ev_handle, void* value)
 
     hap_acc_event_response(ev, value, &res_header, &res_header_len, &res_body, &body_len);
     encrypt_send(ev->hc->nc, ev->hc, res_header, res_header_len, res_body, body_len);
+    //printf("%.*s\n", res_header_len, res_header);
+    //printf("%.*s\n", body_len, res_body);
     hap_acc_event_response_free(res_header, res_body);
 
     return 0;
