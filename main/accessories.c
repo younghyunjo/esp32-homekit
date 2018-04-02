@@ -51,15 +51,21 @@ struct hap_attr_characteristic {
 
 static const char* header_204_fmt = 
     "HTTP/1.1 204 No Content\r\n"
-    "Connection: keep-alive\r\n"
-    "Content-type: application/hap+json\r\n"
+    //"Connection: keep-alive\r\n"
+    //"Content-type: application/hap+json\r\n"
     "\r\n";
 
 static const char* header_200_fmt = 
     "HTTP/1.1 200 OK\r\n"
+    //"Connection: keep-alive\r\n"
+    "Content-Type: application/hap+json\r\n"
     "Content-Length: %d\r\n"
-    "Connection: keep-alive\r\n"
-    "Content-type: application/hap+json\r\n"
+    "\r\n";
+
+static const char* header_event_200_fmt = 
+    "EVENT/1.0 200 OK\r\n"
+    "Content-Type: application/hap+json\r\n"
+    "Content-Length: %d\r\n"
     "\r\n";
 
 int accessories_do(struct hap_accessory* a, char** res_header, int* res_header_len, char** res_body, int* res_body_len);
@@ -95,47 +101,54 @@ static cJSON* _attr_characterisic_to_json(struct hap_attr_characteristic* c)
     cJSON* perms = cJSON_CreateArray(); 
     cJSON_AddItemToObject(root, "perms", perms);
 
+    void* value = NULL;
+    if (c->read)
+        value = c->read(c->callback_arg);
+
     switch(c->type) {
+        case HAP_CHARACTER_CONTACT_SENSOR_STATE:
+            cJSON_AddItemToArray(perms, cJSON_CreateString("pr"));
+            cJSON_AddItemToArray(perms, cJSON_CreateString("ev"));
+            cJSON_AddStringToObject(root, "format", "uint8");
+            cJSON_AddNumberToObject(root, "value", (int)value);
+            break;
         case HAP_CHARACTER_ON:
             cJSON_AddItemToArray(perms, cJSON_CreateString("pr"));
             cJSON_AddItemToArray(perms, cJSON_CreateString("pw"));
             cJSON_AddItemToArray(perms, cJSON_CreateString("ev"));
             cJSON_AddStringToObject(root, "format", "bool");
-            cJSON_AddItemToObject(root, "value", cJSON_CreateBool(1));
+            if (value)
+                cJSON_AddBoolToObject(root, "value", true);
+            else
+                cJSON_AddBoolToObject(root, "value", false);
             break;
         case HAP_CHARACTER_IDENTIFY:
-            //cJSON_AddNullToObject(root, "value");
             cJSON_AddStringToObject(root, "format", "bool");
             cJSON_AddItemToArray(perms, cJSON_CreateString("pw"));
             break;
         case HAP_CHARACTER_MANUFACTURER:
             cJSON_AddStringToObject(root, "value", (char*)c->initial_value);
             cJSON_AddStringToObject(root, "format", "string");
-            cJSON_AddNumberToObject(root, "maxLen", 64);
             cJSON_AddItemToArray(perms, cJSON_CreateString("pr"));
             break;
         case HAP_CHARACTER_MODEL:
             cJSON_AddStringToObject(root, "value", (char*)c->initial_value);
             cJSON_AddStringToObject(root, "format", "string");
-            cJSON_AddNumberToObject(root, "maxLen", 64);
             cJSON_AddItemToArray(perms, cJSON_CreateString("pr"));
             break;
         case HAP_CHARACTER_NAME:
             cJSON_AddStringToObject(root, "value", (char*)c->initial_value);
             cJSON_AddStringToObject(root, "format", "string");
-            cJSON_AddNumberToObject(root, "maxLen", 64);
             cJSON_AddItemToArray(perms, cJSON_CreateString("pr"));
             break;
         case HAP_CHARACTER_SERIAL_NUMBER:
             cJSON_AddStringToObject(root, "value", (char*)c->initial_value);
             cJSON_AddStringToObject(root, "format", "string");
-            cJSON_AddNumberToObject(root, "maxLen", 64);
             cJSON_AddItemToArray(perms, cJSON_CreateString("pr"));
             break;
         case HAP_CHARACTER_FIRMWARE_REVISION:
             cJSON_AddStringToObject(root, "value", (char*)c->initial_value);
             cJSON_AddStringToObject(root, "format", "string");
-            cJSON_AddNumberToObject(root, "maxLen", 64);
             cJSON_AddItemToArray(perms, cJSON_CreateString("pr"));
             break;
         default:
@@ -197,6 +210,9 @@ struct cJSON* _characteristic_value_to_json(int aid, int iid, enum hap_character
             cJSON_AddBoolToObject(char_json, "value", true);
         else 
             cJSON_AddBoolToObject(char_json, "value", false);
+        break;
+    case HAP_CHARACTER_CONTACT_SENSOR_STATE:
+        cJSON_AddNumberToObject(char_json, "value", (int)value);
         break;
     default:
         break;
@@ -265,10 +281,6 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, ch
     sprintf(*res_header, header_200_fmt, *res_body_len);
     *res_header_len = strlen(*res_header);
 
-    {
-        printf("%s%s\n", *res_header, *res_body);
-    }
-
     return 0;
 }
 
@@ -282,7 +294,6 @@ void hap_acc_characteristic_get_free(char* res_header, char* res_body)
 
 int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* hc, char* req_body, int req_body_len, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
 {
-    printf("%.*s\n", req_body_len, req_body);
     cJSON* root = cJSON_Parse(req_body);
     cJSON* char_array_json = cJSON_GetObjectItem(root, "characteristics");
     int nr_char = cJSON_GetArraySize(char_array_json);
@@ -322,9 +333,6 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
                     }
                 }
             }
-
-
-
         }
 
         cJSON* value_json = cJSON_GetObjectItem(char_json, "value");
@@ -335,8 +343,7 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
 
     *res_header = calloc(1, strlen(header_204_fmt) + 1);
     strcpy(*res_header, header_204_fmt);
-
-    printf("%s\n", *res_header);
+    *res_header_len = strlen(*res_header);
 
     *res_body = NULL;
     *res_body_len = 0;
@@ -389,8 +396,8 @@ void hap_acc_event_response(struct hap_event* ev, void* value, char** res_header
     *res_body_len = strlen(*res_body);
     cJSON_Delete(root);
 
-    *res_header = calloc(1, strlen(header_200_fmt) + 16);
-    sprintf(*res_header, header_200_fmt, *res_body_len);
+    *res_header = calloc(1, strlen(header_event_200_fmt) + 16);
+    sprintf(*res_header, header_event_200_fmt, *res_body_len);
     *res_header_len = strlen(*res_header);
 }
 
