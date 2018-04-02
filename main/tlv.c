@@ -49,7 +49,7 @@ static int _item_length(uint8_t* item, uint8_t* bound)
 static struct tlv* _defragmentation(uint8_t* item, uint8_t* bound) 
 {
     int tlv_item_length = _item_length(item, bound);
-    printf("[TLV] tlv_item_length:%d\n", tlv_item_length);
+    //printf("[TLV] tlv_item_length:%d\n", tlv_item_length);
     struct tlv* tlv = malloc(sizeof(struct tlv) + tlv_item_length);
     if (tlv == NULL) {
         printf("[TLV] malloc failed. %d\n", sizeof(struct tlv) + tlv_item_length);
