@@ -19,7 +19,7 @@ static uint8_t* _type_to_nonce(enum chacha20_poly1305_type type) {
     return nonce[type];
 }
 
-int chacha20_poly1305_decrypt_with_nonce(uint8_t nonce[CHACHA20_POLY1305_NONCE_LENGTH], uint8_t* key, uint8_t* aad, int aad_len, uint8_t* encrypted, int encrypted_len, uint8_t* decrypted)
+int chacha20_poly1305_decrypt_with_nonce(uint8_t* nonce, uint8_t* key, uint8_t* aad, int aad_len, uint8_t* encrypted, int encrypted_len, uint8_t* decrypted)
 {
     uint8_t* cipher_text = encrypted;
     int cipher_text_len = encrypted_len - CHACHA20_POLY1305_AEAD_AUTHTAG_SIZE;
