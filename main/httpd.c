@@ -29,11 +29,11 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_
             char addr[32];
             mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
                                 MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
-            printf("Connection %p from %s\n", nc, addr);
+            printf("[HTTPD] Connection %p from %s\n", nc, addr);
             break;
         }
         case MG_EV_RECV: {
-            printf("MG_EV_RECV\n");
+            printf("[HTTPD] MG_EV_RECV\n");
             if (_ops.recv) {
                 _ops.recv(user_data, nc, nc->recv_mbuf.buf, nc->recv_mbuf.len);
             }
@@ -43,7 +43,7 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_
             break;
         }
         case MG_EV_CLOSE: {
-            printf("MG_EV_CLOSE");
+            printf("[HTTPD] MG_EV_CLOSE");
             printf("Connection %p closed\n", nc);
             if (_ops.close) {
                 _ops.close(user_data, nc);
@@ -51,7 +51,7 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_
             break;
         }
         case MG_EV_SEND: {
-            printf("MG_EV_SEND\n");
+            printf("[HTTPD] MG_EV_SEND. %d\n", *((int*)user_data));
             break;
         }
         default: {
