@@ -1,0 +1,4 @@
+[submodule "wolfssl"]
+	path = wolfssl
+	url = https://github.com/younghyunjo/wolfssl.git
+	branch = esp-idf
