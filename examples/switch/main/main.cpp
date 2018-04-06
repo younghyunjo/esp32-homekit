@@ -11,10 +11,6 @@
 #include "mdns.h"
 #include "Arduino.h"
 #include "hap.h"
-#include "srp.h"
-#include "nvs.h"
-#include "advertise.h"
-#include "httpd.h"
 
 #include <WiFi.h>
 
