@@ -1,8 +1,4 @@
-[submodule "components/wolfssl"]
-	path = components/wolfssl
+[submodule "wolfssl"]
+	path = wolfssl
 	url = https://github.com/younghyunjo/wolfssl.git
-    branch = esp-idf
-[submodule "components/arduino"]
-	path = components/arduino
-	url = https://github.com/espressif/arduino-esp32.git
-    branch = master
+	branch = esp-idf

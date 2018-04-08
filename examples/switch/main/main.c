@@ -7,16 +7,15 @@
 #include "esp_wifi.h"
 #include "esp_event_loop.h"
 #include "esp_log.h"
+#include "lwip/err.h"
+#include "lwip/sys.h"
 #include "nvs_flash.h"
-#include "mdns.h"
-#include "Arduino.h"
-#include "hap.h"
-#include "srp.h"
-#include "nvs.h"
-#include "advertise.h"
-#include "httpd.h"
 
-#include <WiFi.h>
+#include "hap.h"
+
+
+
+#define TAG "SWITCH"
 
 #define ACCESSORY_NAME  "SWITCH"
 #define MANUFACTURER_NAME   "YOUNGHYUN"
@@ -24,23 +23,23 @@
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
 #if 1
-#define EXAMPLE_WIFI_SSID "unibj"
-#define EXAMPLE_WIFI_PASS "12673063"
+#define EXAMPLE_ESP_WIFI_SSID "unibj"
+#define EXAMPLE_ESP_WIFI_PASS "12673063"
 #endif
 #if 0
-#define EXAMPLE_WIFI_SSID "NO_RUN"
-#define EXAMPLE_WIFI_PASS "1qaz2wsx"
+#define EXAMPLE_ESP_WIFI_SSID "NO_RUN"
+#define EXAMPLE_ESP_WIFI_PASS "1qaz2wsx"
 #endif
 
 static gpio_num_t LED_PORT = GPIO_NUM_2;
 
 /* FreeRTOS event group to signal when we are connected & ready to make a request */
 static EventGroupHandle_t wifi_event_group;
+const int WIFI_CONNECTED_BIT = BIT0;
 
 /* The event group allows multiple bits for each event,
    but we only care about one event - are we connected
    to the AP with an IP? */
-const int CONNECTED_BIT = BIT0;
 static void* a;
 static void* _ev_handle;
 static int led = false;
@@ -106,37 +105,70 @@ void hap_object_init(void* arg)
     hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_SWITCHS, cc, ARRAY_SIZE(cc));
 }
 
-void WiFiEvent(WiFiEvent_t event)
+
+static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
-    printf("[WiFi-event] event: %d\n", event);
+    switch(event->event_id) {
+    case SYSTEM_EVENT_STA_START:
+        esp_wifi_connect();
+        break;
+    case SYSTEM_EVENT_STA_GOT_IP:
+        ESP_LOGI(TAG, "got ip:%s",
+                 ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+        {
+            hap_init();
 
-    if (event == SYSTEM_EVENT_STA_GOT_IP) {
-        printf("WiFi connected\n");
-
-        hap_init();
-
-        uint8_t mac[6];
-        esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
-        char accessory_id[32] = {0,};
-        sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        hap_accessory_callback_t callback;
-        callback.hap_object_init = hap_object_init;
-        a = hap_accessory_register((char*)ACCESSORY_NAME, accessory_id, (char*)"053-58-197", (char*)MANUFACTURER_NAME, HAP_ACCESSORY_CATEGORY_OTHER, 811, 1, NULL, &callback);
+            uint8_t mac[6];
+            esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
+            char accessory_id[32] = {0,};
+            sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            hap_accessory_callback_t callback;
+            callback.hap_object_init = hap_object_init;
+            a = hap_accessory_register((char*)ACCESSORY_NAME, accessory_id, (char*)"053-58-197", (char*)MANUFACTURER_NAME, HAP_ACCESSORY_CATEGORY_OTHER, 811, 1, NULL, &callback);
+        }
+        break;
+    case SYSTEM_EVENT_STA_DISCONNECTED:
+        esp_wifi_connect();
+        xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+        break;
+    default:
+        break;
     }
-    else if (event == SYSTEM_EVENT_STA_DISCONNECTED) {
-        Serial.println("WiFi lost connection");
-    }
+    return ESP_OK;
 }
 
-extern "C" void app_main()
+void wifi_init_sta()
+{
+    wifi_event_group = xEventGroupCreate();
+
+    tcpip_adapter_init();
+    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL) );
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = EXAMPLE_ESP_WIFI_SSID,
+            .password = EXAMPLE_ESP_WIFI_PASS
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_start() );
+
+    ESP_LOGI(TAG, "wifi_init_sta finished.");
+    ESP_LOGI(TAG, "connect to ap SSID:%s password:%s",
+             EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+}
+
+void app_main()
 {
     ESP_ERROR_CHECK( nvs_flash_init() );
-
-    initArduino();
 
     gpio_pad_select_gpio(LED_PORT);
     gpio_set_direction(LED_PORT, GPIO_MODE_OUTPUT);
 
-    WiFi.onEvent(WiFiEvent);
-    WiFi.begin(EXAMPLE_WIFI_SSID, EXAMPLE_WIFI_PASS);
+    wifi_init_sta();
 }

@@ -3,10 +3,6 @@
 # project subdirectory.
 #
 
+EXTRA_COMPONENT_DIRS += $(PROJECT_PATH)/../../../
 PROJECT_NAME := app-template
-
 include $(IDF_PATH)/make/project.mk
-
-tags:
-	ctags -R --c++-kinds=+p --fields=+iaS --extra=+q $(IDF_PATH) .
-
