@@ -108,17 +108,6 @@ static int _ios_device_signature_verify(void* iosdevices, uint8_t* srp_key, uint
             (uint8_t*)&ios_device_ltpk->value, ios_device_ltpk->length,
             &ios_device_info_len);
 
-    printf("ios_device_ltpk ptr:%p\n", ios_device_ltpk);
-    printf("ios_device_ltpk->value:%p\n", (uint8_t*)&ios_device_ltpk->value);
-    printf("ios_device_ltpk->length:%d\n", ios_device_ltpk->length);
-
-    printf("ios_device_signature ptr:%p\n", ios_device_signature);
-    printf("ios_device_signature->value:%p\n", (uint8_t*)&ios_device_signature->value);
-    printf("ios_device_signature->length:%d\n", ios_device_signature->length);
-
-    printf("ios_device_info ptr:%p\n", ios_device_info);
-    printf("ios_device_info_len:%d\n", ios_device_info_len);
-
     int verified = ed25519_verify((uint8_t*)&ios_device_ltpk->value, ios_device_ltpk->length,
             (uint8_t*)&ios_device_signature->value, ios_device_signature->length,
             ios_device_info, ios_device_info_len);
@@ -237,6 +226,10 @@ static int _setup_m4(struct pair_setup* ps,
 {
     struct tlv* ios_srp_public_key = tlv_decode(device_msg, device_msg_length, 
             HAP_TLV_TYPE_PUBLICKEY);
+    if (!ios_srp_public_key) {
+        printf("tlv_decode failed. type:%d\n", HAP_TLV_TYPE_PUBLICKEY);
+        return -1;
+    }
 #if 0
     ESP_LOGI(TAG, "A");
     _array_print((char*)&ios_srp_public_key->value, ios_srp_public_key->length);
@@ -251,6 +244,10 @@ static int _setup_m4(struct pair_setup* ps,
 
     struct tlv* ios_srp_proof = tlv_decode((uint8_t*)device_msg, device_msg_length, 
             HAP_TLV_TYPE_PROOF);
+    if (!ios_srp_proof) {
+        printf("tlv_decode failed. type:%d\n", HAP_TLV_TYPE_PROOF);
+        return -1;
+    }
 #if 0
     ESP_LOGI(TAG, "IOS PROOF");
     _array_print((char*)&ios_srp_proof->value, ios_srp_proof->length);
