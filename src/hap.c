@@ -273,7 +273,7 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
         char* res_body = NULL;
         int body_len = 0;
 
-        pairings_do(hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
+        pairings_do(a->iosdevices, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
         if (res_header) {
             mg_send(nc, res_header, res_header_len);
         }

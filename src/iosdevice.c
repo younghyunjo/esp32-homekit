@@ -35,9 +35,40 @@ static int _pairing_match(void* handle, char id[], char key[])
     return -1;
 }
 
-int iosdevice_pairings_remove(void* handle, char id[], char key[])
+static int _pairing_match_with_id(void* handle, char id[])
 {
-    int slot = _pairing_match(handle, id, key);
+    struct iosdevice_pairings *ipairings = (struct iosdevice_pairings*)handle;
+    for (int i=0; i<IOSDEVICE_PER_ACCESSORY_MAX; i++) {
+        if (ipairings->iosdevices[i].slot == -1)
+            continue;
+        if (memcmp(ipairings->iosdevices[i].id, id, IOSDEVICE_ID_LEN) != 0)
+            continue;
+        return i;
+    }
+
+    return -1;
+}
+
+int iosdevice_pairings(void* handle, struct iosdevice *idevice)
+{
+    struct iosdevice_pairings *ipairings = (struct iosdevice_pairings*)handle;
+    int nr_paired_device = 0;
+
+    for (int i=0; i<IOSDEVICE_PER_ACCESSORY_MAX; i++) {
+        if (ipairings->iosdevices[i].slot == -1)
+            continue;
+
+        memcpy(idevice[nr_paired_device].id, ipairings->iosdevices[i].id, IOSDEVICE_ID_LEN);
+        memcpy(idevice[nr_paired_device].key, ipairings->iosdevices[i].key, ED25519_PUBLIC_KEY_LENGTH);
+        nr_paired_device++;
+    }
+
+    return nr_paired_device;
+}
+
+int iosdevice_pairings_remove(void* handle, char id[])
+{
+    int slot = _pairing_match_with_id(handle, id);
     if (slot < 0) {
         printf("[ERR] no iosdevice to be removed\n");
         return -1;
