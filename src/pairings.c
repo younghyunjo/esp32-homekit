@@ -45,6 +45,10 @@ static enum hap_pairing_method _method_get(uint8_t* device_msg, int device_msg_l
 
 static int _remove(uint8_t* device_msg, int device_msg_length, uint8_t** acc_msg, int* acc_msg_length) {
     struct tlv* remove_identifier = tlv_decode(device_msg, device_msg_length, HAP_TLV_TYPE_IDENTIFIER);
+    if (!remove_identifier) {
+        printf("tlv_decode failed. type:%d\n", HAP_TLV_TYPE_IDENTIFIER);
+        return -1;
+    }
     printf("%.*s\n",remove_identifier->length , ((uint8_t*)&remove_identifier->value));
 #if 0
     for (int i=0; i<remove_identifier->length; i++) {

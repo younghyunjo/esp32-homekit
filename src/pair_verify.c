@@ -64,6 +64,10 @@ static int _verify_m2(struct pair_verify* pv,
 
     struct tlv* ios_device_curve_key = tlv_decode((uint8_t*)device_msg, 
             device_msg_length, HAP_TLV_TYPE_PUBLICKEY);
+    if (!ios_device_curve_key) {
+        printf("tlv_decode failed. type:%d\n", HAP_TLV_TYPE_PUBLICKEY);
+        return -1;
+    }
 
     uint8_t session_key[CURVE25519_SECRET_LENGTH] = {0,};
     int session_key_length = CURVE25519_SECRET_LENGTH;
