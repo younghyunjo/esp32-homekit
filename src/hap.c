@@ -21,6 +21,7 @@
 
 struct hap {
     int nr_accessory;
+    SemaphoreHandle_t mutex;
 };
 
 static struct hap* _hap_desc;
@@ -297,6 +298,8 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
 static void _msg_recv(void* connection, struct mg_connection* nc, char* msg, int len)
 {
     struct hap_connection* hc = connection;
+
+    xSemaphoreTake(_hap_desc->mutex, 0);
     
     if (hc->pair_verified) {
         _encrypted_msg_recv(connection, nc, msg, len);
@@ -304,11 +307,15 @@ static void _msg_recv(void* connection, struct mg_connection* nc, char* msg, int
     else {
         _plain_msg_recv(connection, nc, msg, len);
     }
+
+    xSemaphoreGive(_hap_desc->mutex);
 }
 
 static void _hap_connection_close(void* connection, struct mg_connection* nc)
 {
     struct hap_connection* hc = connection;
+
+    xSemaphoreTake(_hap_desc->mutex, 0);
 
     if (hc->pair_setup)
         pair_setup_cleanup(hc->pair_setup);
@@ -321,6 +328,9 @@ static void _hap_connection_close(void* connection, struct mg_connection* nc)
     }
 
     list_del(&hc->list);
+
+    xSemaphoreGive(_hap_desc->mutex);
+
     free(hc);
 }
 
@@ -332,11 +342,16 @@ static void _hap_connection_accept(void* accessory, struct mg_connection* nc)
     hc->nc = nc;
     hc->a = a;
     hc->pair_verified = false;
-    INIT_LIST_HEAD(&hc->event_head);
 
+
+    INIT_LIST_HEAD(&hc->event_head);
     nc->user_data = hc;
 
+    xSemaphoreTake(_hap_desc->mutex, 0);
+
     list_add(&hc->list, &a->connections);
+
+    xSemaphoreGive(_hap_desc->mutex);
 }
 
 static void _accessory_ltk_load(struct hap_accessory* a) 
@@ -381,11 +396,14 @@ int hap_event_response(void* acc_instance, void* ev_handle, void* value)
     char* res_body = NULL;
     int body_len = 0;
 
+    xSemaphoreTake(_hap_desc->mutex, 0);
     hap_acc_event_response(ev, value, &res_header, &res_header_len, &res_body, &body_len);
     encrypt_send(ev->hc->nc, ev->hc, res_header, res_header_len, res_body, body_len);
     //printf("%.*s\n", res_header_len, res_header);
     //printf("%.*s\n", body_len, res_body);
     hap_acc_event_response_free(res_header, res_body);
+
+    xSemaphoreGive(_hap_desc->mutex);
 
     return 0;
 }
@@ -460,6 +478,8 @@ void hap_init(void)
     _hap_desc = calloc(1, sizeof(struct hap));
     if (_hap_desc == NULL)
         return;
+
+    vSemaphoreCreateBinary(_hap_desc->mutex);
 
     struct httpd_ops httpd_ops = {
         .accept = _hap_connection_accept,
