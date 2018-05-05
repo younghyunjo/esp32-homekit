@@ -21,7 +21,7 @@ struct iosdevice {
 /* idevice is array pointer. array size is IOSDEVICE_PER_ACCESSORY_MAX */
 int iosdevice_pairings(void* handle, struct iosdevice *idevice);
 
-int iosdevice_pairings_remove(void* handle, char id[], char key[]);
+int iosdevice_pairings_remove(void* handle, char id[]);
 int iosdevice_pairings_add(void* handle, char id[], char key[]);
 bool iosdevice_pairing_match(void* handle, char id[], char key[]);
 void* iosdevice_pairings_init(char accessory_id[]);
