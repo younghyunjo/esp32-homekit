@@ -60,18 +60,8 @@ struct hap_connection {
     int decrypt_count;
     int encrypt_count;
 
-    struct list_head event_head;
     void* pair_setup;
     void* pair_verify;
-};
-
-struct hap_event {
-    struct hap_connection* hc;
-    int aid;
-    int iid;
-    enum hap_characteristic_type type;
-
-    struct list_head list;
 };
 
 enum hap_pairing_method {

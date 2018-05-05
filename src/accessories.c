@@ -312,26 +312,10 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
         cJSON* ev_json = cJSON_GetObjectItem(char_json, "ev");
         if (ev_json && c->event) {
             if (ev_json->valueint) {
-                struct hap_event* ev_handle = calloc(1, sizeof(struct hap_event));
-                ev_handle->hc = hc;
-                ev_handle->aid = c->aid;
-                ev_handle->iid = c->iid;
-                ev_handle->type = c->type;
-                list_add(&ev_handle->list, &hc->event_head);
-
-                c->event(c->callback_arg, ev_handle, (bool)ev_json->valueint);
+                c->event(c->callback_arg, (void*)c, (bool)ev_json->valueint);
             }
             else {
-                struct hap_event* ev_handle = NULL;
-                struct hap_event* saveptr;
-                list_for_each_entry_safe(ev_handle, saveptr, &hc->event_head, list) {
-                    if (ev_handle->aid == aid && ev_handle->iid == iid) {
-                        c->event(c->callback_arg, ev_handle, (bool)ev_json->valueint);
-                        list_del(&ev_handle->list);
-                        free(ev_handle);
-                        break;
-                    }
-                }
+                c->event(c->callback_arg, (void*)c, (bool)ev_json->valueint);
             }
         }
 
@@ -384,12 +368,13 @@ void hap_acc_accessories_do_free(char* res_header, char* res_body)
         free(res_body);
 }
 
-void hap_acc_event_response(struct hap_event* ev, void* value, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
+void hap_acc_event_response(void* ev, void* value, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
 {
+    struct hap_attr_characteristic* c = ev;
     cJSON* root = cJSON_CreateObject();
     cJSON* characteristics = cJSON_CreateArray();
     cJSON_AddItemToObject(root, "characteristics", characteristics);
-    cJSON* char_json = _characteristic_value_to_json(ev->aid, ev->iid, ev->type, value);
+    cJSON* char_json = _characteristic_value_to_json(c->aid, c->iid, c->type, value);
     cJSON_AddItemToArray(characteristics, char_json);
 
     *res_body = cJSON_PrintUnformatted(root);
@@ -407,17 +392,6 @@ void hap_acc_event_response_free(char* res_header, char* res_body)
         free(res_header);
     if (res_body)
         free(res_body);
-}
-
-void hap_acc_event_free(struct hap_connection* hc)
-{
-    struct hap_event* ev_handle = NULL;
-    struct hap_event* saveptr;
-
-    list_for_each_entry_safe(ev_handle, saveptr, &hc->event_head, list) {
-        list_del(&ev_handle->list);
-        free(ev_handle);
-    }
 }
 
 void* hap_acc_accessory_add(void* acc_instance)

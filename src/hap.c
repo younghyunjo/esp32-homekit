@@ -323,10 +323,6 @@ static void _hap_connection_close(void* connection, struct mg_connection* nc)
     if (hc->pair_verify)
         pair_verify_cleanup(hc->pair_setup);
 
-    if (!list_empty(&hc->event_head)) {
-        hap_acc_event_free(hc);
-    }
-
     list_del(&hc->list);
 
     xSemaphoreGive(_hap_desc->mutex);
@@ -344,7 +340,7 @@ static void _hap_connection_accept(void* accessory, struct mg_connection* nc)
     hc->pair_verified = false;
 
 
-    INIT_LIST_HEAD(&hc->event_head);
+    //INIT_LIST_HEAD(&hc->event_head);
     nc->user_data = hc;
 
     xSemaphoreTake(_hap_desc->mutex, 0);
@@ -389,18 +385,24 @@ static void _accessory_ltk_load(struct hap_accessory* a)
 
 int hap_event_response(void* acc_instance, void* ev_handle, void* value)
 {
-    struct hap_event* ev = ev_handle;
-
     char* res_header = NULL;
     int res_header_len = 0;
     char* res_body = NULL;
     int body_len = 0;
 
     xSemaphoreTake(_hap_desc->mutex, 0);
-    hap_acc_event_response(ev, value, &res_header, &res_header_len, &res_body, &body_len);
-    encrypt_send(ev->hc->nc, ev->hc, res_header, res_header_len, res_body, body_len);
+
+    hap_acc_event_response(ev_handle, value, &res_header, &res_header_len, &res_body, &body_len);
+
+    struct hap_accessory* a = acc_instance;
+    struct hap_connection* hc;
+    list_for_each_entry(hc, &a->connections, list) {
+        encrypt_send(hc->nc, hc, res_header, res_header_len, res_body, body_len);
+    }
+
     //printf("%.*s\n", res_header_len, res_header);
     //printf("%.*s\n", body_len, res_body);
+
     hap_acc_event_response_free(res_header, res_body);
 
     xSemaphoreGive(_hap_desc->mutex);
