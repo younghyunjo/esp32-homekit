@@ -186,6 +186,10 @@ static cJSON* _attr_characterisic_to_json(struct hap_attr_characteristic* c)
 
         cJSON_AddItemToObject(root, "value", _value_to_formatized_json(c, value));
     }
+    else {
+        if (c->type != HAP_CHARACTER_IDENTIFY)
+            cJSON_AddNullToObject(root, "value");
+    }
 
     return root;
 }
@@ -365,11 +369,12 @@ int hap_acc_accessories_do(struct hap_accessory* a, char** res_header, int* res_
 {
     if (list_empty(&a->attr_accessories)) {
         a->callback.hap_object_init(a->callback_arg);
-        a->attr_accessories_json = _attr_accessories_to_json(&a->attr_accessories);
     }
+    cJSON* attr_accessories_json = _attr_accessories_to_json(&a->attr_accessories);
 
-    *res_body = cJSON_PrintUnformatted(a->attr_accessories_json);
+    *res_body = cJSON_PrintUnformatted(attr_accessories_json);
     *res_body_len = strlen(*res_body);
+    free(attr_accessories_json);
 
     *res_header = calloc(1, strlen(header_200_fmt) + 16);
     sprintf(*res_header, header_200_fmt, *res_body_len);

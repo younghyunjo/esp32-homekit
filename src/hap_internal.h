@@ -42,7 +42,6 @@ struct hap_accessory {
         uint8_t private[ED28819_PRIVATE_KEY_LENGTH];
     } keys;
 
-    cJSON* attr_accessories_json;
     void* callback_arg;
     hap_accessory_callback_t callback;
     void* accessories_ojbects;
