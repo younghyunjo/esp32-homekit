@@ -11,9 +11,6 @@
 #include "lwip/sys.h"
 #include "nvs_flash.h"
 
-#include <IRremote.h>
-#include <Wire.h>
-
 #include "hap.h"
 
 #include "rom/ets_sys.h"
@@ -54,6 +51,9 @@ void temperature_humidity_monitoring_task(void* arm)
     float temperature_float = 0;
     float humidity_float = 0;
     while (1) {
+        ESP_LOGI("MAIN", "RAM LEFT %d", esp_get_free_heap_size());
+        ESP_LOGI("MAIN", "TASK STACK : %d", uxTaskGetStackHighWaterMark(NULL));
+
         if (dht22_read(DHT22_GPIO, &temperature_float, &humidity_float) < 0) {
             vTaskDelay( 3000 / portTICK_RATE_MS );
             taskYIELD();
@@ -63,15 +63,18 @@ void temperature_humidity_monitoring_task(void* arm)
         temperature = temperature_float * 100;
         humidity = humidity_float * 100;
 
-        xSemaphoreTake(ev_mutex, 0);
+        //xSemaphoreTake(ev_mutex, 0);
 
+#if 1
         if (_humidity_ev_handle)
             hap_event_response(acc, _humidity_ev_handle, (void*)humidity);
 
         if (_temperature_ev_handle)
             hap_event_response(acc, _temperature_ev_handle, (void*)temperature);
 
-        xSemaphoreGive(ev_mutex);
+#endif
+        //xSemaphoreGive(ev_mutex);
+
         printf("%d %d\n", temperature, humidity);
         vTaskDelay( 3000 / portTICK_RATE_MS );
     }
@@ -86,14 +89,14 @@ static void* _temperature_read(void* arg)
 void _temperature_notify(void* arg, void* ev_handle, bool enable)
 {
     ESP_LOGI("MAIN", "_temperature_notify");
-    xSemaphoreTake(ev_mutex, 0);
+    //xSemaphoreTake(ev_mutex, 0);
 
     if (enable) 
         _temperature_ev_handle = ev_handle;
     else 
         _temperature_ev_handle = NULL;
 
-    xSemaphoreGive(ev_mutex);
+    //xSemaphoreGive(ev_mutex);
 }
 
 static void* _humidity_read(void* arg)
@@ -105,14 +108,14 @@ static void* _humidity_read(void* arg)
 void _humidity_notify(void* arg, void* ev_handle, bool enable)
 {
     ESP_LOGI("MAIN", "_humidity_notify");
-    xSemaphoreTake(ev_mutex, 0);
+    //xSemaphoreTake(ev_mutex, 0);
 
     if (enable) 
         _humidity_ev_handle = ev_handle;
     else 
         _humidity_ev_handle = NULL;
 
-    xSemaphoreGive(ev_mutex);
+    //xSemaphoreGive(ev_mutex);
 }
 
 static bool _identifed = false;
@@ -208,7 +211,7 @@ extern "C" void app_main()
     ESP_ERROR_CHECK(nvs_flash_init());
     vSemaphoreCreateBinary(ev_mutex);
 
-    xTaskCreate( &temperature_humidity_monitoring_task, "dht22", 2048, NULL, 5, NULL );
+    xTaskCreate( &temperature_humidity_monitoring_task, "dht22", 4096, NULL, 5, NULL );
 
     wifi_init_sta();
 }
