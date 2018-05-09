@@ -2,3 +2,6 @@
 	path = wolfssl
 	url = https://github.com/younghyunjo/wolfssl.git
 	branch = esp-idf
+[submodule "examples/thermometer-hygrometer-dht22/components/esp32-dht22"]
+	path = examples/thermometer-hygrometer-dht22/components/esp32-dht22
+	url = https://github.com/younghyunjo/esp32-dht22.git
