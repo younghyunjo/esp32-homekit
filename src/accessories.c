@@ -871,6 +871,7 @@ void* hap_acc_service_and_characteristics_add(void* _attr_a,
 
     struct hap_attr_characteristic* c = (struct hap_attr_characteristic*)&attr_s->characters;
     for (int i=0; i<nr_cs; i++) {
+        c->callback_arg = cs[i].callback_arg;
         c->iid = ++attr_a->last_iid;
         c->type = cs[i].type;
         c->initial_value = cs[i].initial_value;
