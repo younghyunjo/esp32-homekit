@@ -118,7 +118,8 @@ static cJSON* _value_to_formatized_json(struct hap_attr_characteristic* c, void*
         case FORMAT_INT:
             return cJSON_CreateNumber((int)value);
         case FORMAT_FLOAT: {
-            double floating_value = (int)value/100;
+            int value_interger = (int)value;
+            double floating_value = (double)value_interger / 100;
             return cJSON_CreateNumber(floating_value);
         }
         case FORMAT_STRING:
@@ -328,9 +329,6 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
         if (c == NULL)
             continue;
 
-        if (!c->write)
-            continue;
-
         cJSON* ev_json = cJSON_GetObjectItem(char_json, "ev");
         if (ev_json && c->event) {
             if (ev_json->valueint) {
@@ -342,7 +340,7 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
         }
 
         cJSON* value_json = cJSON_GetObjectItem(char_json, "value");
-        if (value_json) {
+        if (value_json && c->write) {
             c->write(c->callback_arg, (void*)value_json->valueint, 0);
         }
     }
