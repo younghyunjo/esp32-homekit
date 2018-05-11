@@ -31,6 +31,15 @@ static const char* header_fmt =
     "Content-Type: application/pairing+tlv8\r\n"
     "\r\n";
 
+static void _dump_hex(uint8_t* data, int len)
+{
+    for (int i=0; i<len; i++) {
+        if (i != 0 && i & 8 == 0)
+            printf("\n");
+        printf("0x%02X ", data[i]);
+    }
+}
+
 static int _subtlv_decrypt(enum hkdf_key_type htype,
         enum chacha20_poly1305_type cptype,
         uint8_t* srp_key, uint8_t* device_msg, int device_msg_length, uint8_t** subtlv, int* subtlv_length)
@@ -89,16 +98,22 @@ static int _ios_device_signature_verify(void* iosdevices, uint8_t* srp_key, uint
     struct tlv* ios_device_pairing_id = tlv_decode(subtlv, subtlv_length, HAP_TLV_TYPE_IDENTIFIER);
     if (!ios_device_pairing_id) { 
         printf("tlv_decode failed. type:%d\n", HAP_TLV_TYPE_IDENTIFIER);
+        printf("tlv length:%d 0x%02X", subtlv_length, subtlv_length);
+        _dump_hex(subtlv, subtlv_length);
         return -1;
     }
     struct tlv* ios_device_ltpk = tlv_decode(subtlv, subtlv_length, HAP_TLV_TYPE_PUBLICKEY);
     if (!ios_device_ltpk) { 
         printf("tlv_decode failed. type:%d\n", HAP_TLV_TYPE_PUBLICKEY);
+        printf("tlv length:%d 0x%02X", subtlv_length, subtlv_length);
+        _dump_hex(subtlv, subtlv_length);
         return -1;
     }
     struct tlv* ios_device_signature = tlv_decode(subtlv, subtlv_length, HAP_TLV_TYPE_SIGNATURE);
     if (!ios_device_signature) { 
         printf("tlv_decode failed. type:%d\n", HAP_TLV_TYPE_SIGNATURE);
+        printf("tlv length:%d 0x%02X", subtlv_length, subtlv_length);
+        _dump_hex(subtlv, subtlv_length);
         return -1;
     }
 
