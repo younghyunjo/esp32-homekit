@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include <cJSON.h>
+#include <esp_log.h>
 
 #include "advertise.h"
 #include "chacha20_poly1305.h"
@@ -18,6 +19,8 @@
 #include "pair_setup.h"
 #include "pair_verify.h"
 #include "pairings.h"
+
+#define TAG "HAP"
 
 struct hap {
     int nr_accessory;
@@ -39,11 +42,11 @@ static int _decrypt(struct hap_connection* hc, char* encrypted, int len, char* d
         ptr = *saveptr;
     }
     else if (*saveptr == encrypted + len){
-        printf("[HAP][INFO] _decrypt end %d\n", (int)((char*)*saveptr - encrypted));
+        ESP_LOGI(TAG, "_decrypt end %d", (int)((char*)*saveptr - encrypted));
         return 0;
     }
     else {
-        printf("BUG? BUG? BUG?\n");
+        ESP_LOGE(TAG, "BUG? BUG? BUG?");
         return 0;
     }
 
@@ -54,7 +57,7 @@ static int _decrypt(struct hap_connection* hc, char* encrypted, int len, char* d
 
     if (chacha20_poly1305_decrypt_with_nonce(nonce, hc->decrypt_key, ptr, AAD_LENGTH, 
                 ptr+AAD_LENGTH, decrypted_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH, (uint8_t*)decrypted) < 0) {
-        printf("[ERR] chacha20_poly1305_decrypt_with_nonce failed\n");
+        ESP_LOGE(TAG, "chacha20_poly1305_decrypt_with_nonce failed");
         return 0;
     }
 
@@ -67,7 +70,7 @@ static void _encrypted_msg_recv(void* connection, struct mg_connection* nc, char
 {
     char* decrypted = calloc(1, len);
     if (decrypted == NULL) {
-        printf("[ERR] calloc failded\n");
+        ESP_LOGE(TAG, "calloc failded. size:%d", len);
         return;
     }
 
@@ -155,7 +158,8 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
     char addr[32];
     mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
             MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
-    printf("[INFO] HTTP request from %s: %.*s %.*s\n", addr, (int) hm->method.len,
+
+    ESP_LOGI(TAG, "HTTP request from %s: %.*s %.*s", addr, (int) hm->method.len,
             hm->method.p, (int) hm->uri.len, hm->uri.p);
 
     if (strncmp(hm->uri.p, "/pair-setup", strlen("/pair-setup")) == 0) {
@@ -219,8 +223,8 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
         hap_acc_accessories_do(a, &res_header, &res_header_len, &res_body, &body_len);
 #if 0
         {
-            printf("------RESPONSE-----\n");
-            printf("%s%s\n", res_header, res_body);
+            ESP_LOGI(TAG, RESPONSE");
+            ESP_LOGI(TAG, "%s%s", res_header, res_body);
         }
 #endif
         encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
@@ -238,10 +242,10 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             hap_acc_characteristic_get(a, query, query_len, &res_header, &res_header_len, &res_body, &body_len);
 #if 0
             {
-                printf("------REQUEST-----\n");
-                printf("%.*s\n", (int)hm->query_string.len, hm->query_string.p);
-                printf("------RESPONSE-----\n");
-                printf("%s%s\n", res_header, res_body);
+                ESP_LOGI(TAG, "------REQUEST-----");
+                ESP_LOGI(TAG, "%.*s", (int)hm->query_string.len, hm->query_string.p);
+                ESP_LOGI(TAG, "------RESPONSE-----");
+                ESP_LOGI(TAG, "%s%s", res_header, res_body);
             }
 #endif
             encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
@@ -256,11 +260,11 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             hap_acc_characteristic_put(a, (void*)hc, (char*)hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
 #if 0
             {
-                printf("------REQUEST-----");
-                printf("%.*s\n", (int)hm->query_string.len, hm->query_string.p);
-                printf("%.*s\n", (int)hm->body.len, (char*)hm->body.p);
-                printf("------RESPONSE-----\n");
-                printf("%s", res_header);
+                ESP_LOGI(TAG, "------REQUEST-----");
+                ESP_LOGI(TAG, "%.*s", (int)hm->query_string.len, hm->query_string.p);
+                ESP_LOGI(TAG, "%.*s", (int)hm->body.len, (char*)hm->body.p);
+                ESP_LOGI(TAG, "------RESPONSE-----");
+                ESP_LOGI(TAG, "%s", res_header);
             }
 #endif
             encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
@@ -286,11 +290,10 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
         pairings_do_free(res_header, res_body);
     }
     else {
-        printf("[HAP][INFO] NOT HANDLED\n");
+        ESP_LOGW(TAG, "NOT HANDLED");
 #if 0
-        printf("WHY????\n");
-        printf("%.*s\n", (int) hm->uri.len, hm->uri.p);
-        printf("%c%c%c%c\n", hm->uri.p[0], hm->uri.p[1], hm->uri.p[2], hm->uri.p[3]);
+        ESP_LOGW(TAG, "%.*s", (int) hm->uri.len, hm->uri.p);
+        ESP_LOGW(TAG, "%c%c%c%c", hm->uri.p[0], hm->uri.p[1], hm->uri.p[2], hm->uri.p[3]);
 #endif
     }
 }
@@ -299,23 +302,18 @@ static void _msg_recv(void* connection, struct mg_connection* nc, char* msg, int
 {
     struct hap_connection* hc = connection;
 
-    xSemaphoreTake(_hap_desc->mutex, 0);
-    
     if (hc->pair_verified) {
         _encrypted_msg_recv(connection, nc, msg, len);
     }
     else {
         _plain_msg_recv(connection, nc, msg, len);
     }
-
-    xSemaphoreGive(_hap_desc->mutex);
 }
 
 static void _hap_connection_close(void* connection, struct mg_connection* nc)
 {
     struct hap_connection* hc = connection;
 
-    xSemaphoreTake(_hap_desc->mutex, 0);
 
     if (hc->pair_setup)
         pair_setup_cleanup(hc->pair_setup);
@@ -323,8 +321,8 @@ static void _hap_connection_close(void* connection, struct mg_connection* nc)
     if (hc->pair_verify)
         pair_verify_cleanup(hc->pair_setup);
 
+    xSemaphoreTake(_hap_desc->mutex, 0);
     list_del(&hc->list);
-
     xSemaphoreGive(_hap_desc->mutex);
 
     free(hc);
@@ -344,9 +342,7 @@ static void _hap_connection_accept(void* accessory, struct mg_connection* nc)
     nc->user_data = hc;
 
     xSemaphoreTake(_hap_desc->mutex, 0);
-
     list_add(&hc->list, &a->connections);
-
     xSemaphoreGive(_hap_desc->mutex);
 }
 
@@ -390,22 +386,22 @@ int hap_event_response(void* acc_instance, void* ev_handle, void* value)
     char* res_body = NULL;
     int body_len = 0;
 
-    xSemaphoreTake(_hap_desc->mutex, 0);
 
     hap_acc_event_response(ev_handle, value, &res_header, &res_header_len, &res_body, &body_len);
 
     struct hap_accessory* a = acc_instance;
     struct hap_connection* hc;
+
+    xSemaphoreTake(_hap_desc->mutex, 0);
     list_for_each_entry(hc, &a->connections, list) {
         encrypt_send(hc->nc, hc, res_header, res_header_len, res_body, body_len);
     }
+    xSemaphoreGive(_hap_desc->mutex);
 
-    //printf("%.*s\n", res_header_len, res_header);
-    //printf("%.*s\n", body_len, res_body);
+    ESP_LOGI(TAG, "%.*s", res_header_len, res_header);
+    ESP_LOGI(TAG, "%.*s", body_len, res_body);
 
     hap_acc_event_response_free(res_header, res_body);
-
-    xSemaphoreGive(_hap_desc->mutex);
 
     return 0;
 }
@@ -434,7 +430,7 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
 
     struct hap_accessory* a = calloc(1, sizeof(struct hap_accessory));
     if (a == NULL) {
-        printf("[ERR] calloc failed. size:%d\n", sizeof(struct hap_accessory));
+        ESP_LOGE("calloc failed. size:%d", sizeof(struct hap_accessory));
         return NULL;
     }
 
