@@ -20,6 +20,8 @@
 #include "pair_verify.h"
 #include "pairings.h"
 
+//#define DEBUG
+
 #define TAG "HAP"
 
 struct hap {
@@ -221,9 +223,9 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
         int body_len = 0;
 
         hap_acc_accessories_do(a, &res_header, &res_header_len, &res_body, &body_len);
-#if 0
+#ifdef DEBUG
         {
-            ESP_LOGI(TAG, RESPONSE");
+            ESP_LOGI(TAG, "RESPONSE");
             ESP_LOGI(TAG, "%s%s", res_header, res_body);
         }
 #endif
@@ -240,7 +242,7 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             int body_len = 0;
 
             hap_acc_characteristic_get(a, query, query_len, &res_header, &res_header_len, &res_body, &body_len);
-#if 0
+#ifdef DEBUG
             {
                 ESP_LOGI(TAG, "------REQUEST-----");
                 ESP_LOGI(TAG, "%.*s", (int)hm->query_string.len, hm->query_string.p);
@@ -258,7 +260,7 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             int body_len = 0;
 
             hap_acc_characteristic_put(a, (void*)hc, (char*)hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
-#if 0
+#ifdef DEBUG
             {
                 ESP_LOGI(TAG, "------REQUEST-----");
                 ESP_LOGI(TAG, "%.*s", (int)hm->query_string.len, hm->query_string.p);
@@ -291,7 +293,7 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
     }
     else {
         ESP_LOGW(TAG, "NOT HANDLED");
-#if 0
+#ifdef DEBUG
         ESP_LOGW(TAG, "%.*s", (int) hm->uri.len, hm->uri.p);
         ESP_LOGW(TAG, "%c%c%c%c", hm->uri.p[0], hm->uri.p[1], hm->uri.p[2], hm->uri.p[3]);
 #endif
