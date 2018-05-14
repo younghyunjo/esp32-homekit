@@ -13,6 +13,8 @@
 #include "srp.h"
 #include "tlv.h"
 
+//#define DEBUG
+
 struct pair_setup {
     char* acc_id;
     char* setup_code;
@@ -33,11 +35,13 @@ static const char* header_fmt =
 
 static void _dump_hex(uint8_t* data, int len)
 {
+#ifdef DEBUG
     for (int i=0; i<len; i++) {
         if (i != 0 && i & 8 == 0)
             printf("\n");
         printf("0x%02X ", data[i]);
     }
+#endif
 }
 
 static int _subtlv_decrypt(enum hkdf_key_type htype,
