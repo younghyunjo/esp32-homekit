@@ -153,13 +153,13 @@ static cJSON* _attr_characterisic_to_json(struct hap_attr_characteristic* c)
             cJSON_AddStringToObject(root, "format", "bool");
             break;
         case FORMAT_UINT8:
-            cJSON_AddStringToObject(root, "format", "unit8");
+            cJSON_AddStringToObject(root, "format", "uint8");
             break;
         case FORMAT_UINT32:
-            cJSON_AddStringToObject(root, "format", "unit32");
+            cJSON_AddStringToObject(root, "format", "uint32");
             break;
         case FORMAT_UINT64:
-            cJSON_AddStringToObject(root, "format", "unit64");
+            cJSON_AddStringToObject(root, "format", "uint64");
             break;
         case FORMAT_INT:
             cJSON_AddStringToObject(root, "format", "int");
