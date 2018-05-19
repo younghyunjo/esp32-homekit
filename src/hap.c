@@ -432,7 +432,7 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
 
     struct hap_accessory* a = calloc(1, sizeof(struct hap_accessory));
     if (a == NULL) {
-        ESP_LOGE("calloc failed. size:%d", sizeof(struct hap_accessory));
+        ESP_LOGE(TAG, "calloc failed. size:%d", sizeof(struct hap_accessory));
         return NULL;
     }
 
