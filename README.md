@@ -53,7 +53,7 @@ $ make flash
 
 # Setup Code
 While pairing accessory and iOS devices, You must enter Setup Code at HOME App.
-The default setupt code is 
-## **`053-58-917`**
+The default setup code is 
+## **`053-58-197`**
 
 
