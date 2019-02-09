@@ -80,6 +80,9 @@ WOLFSSL_SETTINGS =        \
     -DHAVE_CERTIFICATE_STATUS_REQUEST \
     -DCUSTOM_RAND_GENERATE_SEED=os_get_random
 
+MONGOOSE_SETTINGS =       \
+    -DMG_ENABLE_IPV6
+
 LWIP_INCDIRS = \
     -I$(IDF_PATH)/components/lwip/system \
     -I$(IDF_PATH)/components/lwip/include/lwip \
@@ -102,4 +105,5 @@ CFLAGS = \
     -Wno-old-style-declaration  \
     $(LWIP_INCDIRS)             \
     $(FREERTOS_INCDIRS)         \
-    $(WOLFSSL_SETTINGS)
+    $(WOLFSSL_SETTINGS)         \
+    $(MONGOOSE_SETTINGS)

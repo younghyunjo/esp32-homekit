@@ -67,10 +67,13 @@ void* httpd_bind(int port, void* user_data) {
 
     struct mg_connection* nc = NULL;
     char port_string[8] = {0,};
-    sprintf(port_string, "%d", port);
+    #if MG_ENABLE_IPV6
+        sprintf(port_string, "[::]:%d", port);
+    #else
+        sprintf(port_string, "%d", port);
+    #endif
 
     xSemaphoreTake(_httpd_mutex, 0);
-
     nc = mg_bind(&_mgr, port_string, mg_ev_handler, user_data);
     if (nc == NULL) {
         printf("[ERR] mg_bind failed]n");
