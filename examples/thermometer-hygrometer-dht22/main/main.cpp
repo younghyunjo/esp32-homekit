@@ -20,13 +20,13 @@
 #define TAG "SWITCH"
 
 #define ACCESSORY_NAME  "TEMP/HUMI"
-#define MANUFACTURER_NAME   "YOUNGHYUN"
+#define MANUFACTURER_NAME   "NikWest"
 #define MODEL_NAME  "ESP32_ACC"
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
 #if 1
-#define EXAMPLE_ESP_WIFI_SSID "unibj"
-#define EXAMPLE_ESP_WIFI_PASS "12673063"
+#define EXAMPLE_ESP_WIFI_SSID "nikwest"
+#define EXAMPLE_ESP_WIFI_PASS "eilemitweile!"
 #endif
 #if 0
 #define EXAMPLE_ESP_WIFI_SSID "NO_RUN"
@@ -34,10 +34,11 @@
 #endif
 
 /* FIXME */
-static gpio_num_t DHT22_GPIO = GPIO_NUM_22;
+static gpio_num_t DHT22_GPIO = GPIO_NUM_4;
 
 static EventGroupHandle_t wifi_event_group;
-const int WIFI_CONNECTED_BIT = BIT0;
+const int WIFI_GOT_IP_BIT = BIT0;
+const int WIFI_GOT_IP6_BIT = BIT1;
 
 static void* acc;
 static SemaphoreHandle_t ev_mutex;
@@ -158,28 +159,42 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
     case SYSTEM_EVENT_STA_START:
         esp_wifi_connect();
         break;
-    case SYSTEM_EVENT_STA_GOT_IP:
+    case SYSTEM_EVENT_STA_CONNECTED:
+        /* enable ipv6 */
+        tcpip_adapter_create_ip6_linklocal(TCPIP_ADAPTER_IF_STA);
+        break;
+   case SYSTEM_EVENT_STA_GOT_IP:
         ESP_LOGI(TAG, "got ip:%s",
                  ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
-        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-        {
-            hap_init();
-
-            uint8_t mac[6];
-            esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
-            char accessory_id[32] = {0,};
-            sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-            hap_accessory_callback_t callback;
-            callback.hap_object_init = hap_object_init;
-            acc = hap_accessory_register((char*)ACCESSORY_NAME, accessory_id, (char*)"053-58-197", (char*)MANUFACTURER_NAME, HAP_ACCESSORY_CATEGORY_OTHER, 811, 1, NULL, &callback);
-        }
+        xEventGroupSetBits(wifi_event_group, WIFI_GOT_IP_BIT);
         break;
+    case SYSTEM_EVENT_AP_STA_GOT_IP6:
+        ESP_LOGI(TAG, "got ip6:%s",
+            ip6addr_ntoa(&event->event_info.got_ip6.ip6_info.ip));
+        xEventGroupSetBits(wifi_event_group, WIFI_GOT_IP6_BIT);
+        break;   
     case SYSTEM_EVENT_STA_DISCONNECTED:
         esp_wifi_connect();
-        xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+        xEventGroupClearBits(wifi_event_group, WIFI_GOT_IP_BIT);
+        xEventGroupClearBits(wifi_event_group, WIFI_GOT_IP6_BIT);
         break;
     default:
         break;
+    }
+    EventBits_t bits = xEventGroupGetBits(wifi_event_group);
+    if(acc == NULL && (bits & 3) == 3)
+    {
+        ESP_LOGI(TAG, "initializing homekit...");
+        hap_init();
+
+        uint8_t mac[6];
+        esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
+        char accessory_id[32] = {0,};
+        sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        hap_accessory_callback_t callback;
+        callback.hap_object_init = hap_object_init;
+        acc = hap_accessory_register((char*)ACCESSORY_NAME, accessory_id, (char*)"010-12-680", (char*)MANUFACTURER_NAME, HAP_ACCESSORY_CATEGORY_OTHER, 811, 1, NULL, &callback);
+        ESP_LOGI(TAG, "... done.");
     }
     return ESP_OK;
 }
