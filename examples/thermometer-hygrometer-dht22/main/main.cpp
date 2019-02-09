@@ -20,13 +20,13 @@
 #define TAG "SWITCH"
 
 #define ACCESSORY_NAME  "TEMP/HUMI"
-#define MANUFACTURER_NAME   "NikWest"
+#define MANUFACTURER_NAME   "YOUNGHYUN"
 #define MODEL_NAME  "ESP32_ACC"
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
 #if 1
-#define EXAMPLE_ESP_WIFI_SSID "nikwest"
-#define EXAMPLE_ESP_WIFI_PASS "eilemitweile!"
+#define EXAMPLE_ESP_WIFI_SSID "unibj"
+#define EXAMPLE_ESP_WIFI_PASS "12673063!"
 #endif
 #if 0
 #define EXAMPLE_ESP_WIFI_SSID "NO_RUN"
@@ -34,7 +34,7 @@
 #endif
 
 /* FIXME */
-static gpio_num_t DHT22_GPIO = GPIO_NUM_4;
+static gpio_num_t DHT22_GPIO = GPIO_NUM_22;
 
 static EventGroupHandle_t wifi_event_group;
 const int WIFI_GOT_IP_BIT = BIT0;
