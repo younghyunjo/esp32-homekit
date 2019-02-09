@@ -26,7 +26,7 @@
 
 #if 1
 #define EXAMPLE_ESP_WIFI_SSID "unibj"
-#define EXAMPLE_ESP_WIFI_PASS "12673063!"
+#define EXAMPLE_ESP_WIFI_PASS "12673063"
 #endif
 #if 0
 #define EXAMPLE_ESP_WIFI_SSID "NO_RUN"

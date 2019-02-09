@@ -5,9 +5,3 @@
 [submodule "examples/thermometer-hygrometer-dht22/components/esp32-dht22"]
 	path = examples/thermometer-hygrometer-dht22/components/esp32-dht22
 	url = https://github.com/younghyunjo/esp32-dht22.git
-[submodule "examples/tempHumiCO2/components/esp32-dht22"]
-	path = examples/tempHumiCO2/components/esp32-dht22
-	url = https://github.com/younghyunjo/esp32-dht22.git
-[submodule "examples/tempHumiCO2/components/ccs811-esp-idf"]
-	path = examples/tempHumiCO2/components/ccs811-esp-idf
-	url = https://github.com/gschorcht/ccs811-esp-idf.git
