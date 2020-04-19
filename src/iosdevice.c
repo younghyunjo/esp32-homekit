@@ -149,6 +149,7 @@ void* iosdevice_pairings_init(char accessory_id[])
 
     for (int i=0; i<IOSDEVICE_PER_ACCESSORY_MAX; i++) {
         memset(nvs_key, 0, sizeof(nvs_key));
+        memset(nvs_key, 0, sizeof(nvs_key));
         memset(value, 0, sizeof(value));
         sprintf(nvs_key, "%sD%d", ipairings->id, i);
         //nvs_erase(nvs_key);

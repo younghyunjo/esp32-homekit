@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 
+#include <esp_log.h>
 #include <cJSON.h>
 
 #include "advertise.h"
@@ -18,6 +19,8 @@
 #include "pair_verify.h"
 
 #define HAP_UUID    "%08X-0000-1000-8000-0026BB765291"
+
+#define TAG "accessory"
 
 struct hap_acc_accessory {
     struct list_head list;
@@ -63,23 +66,30 @@ struct hap_attr_characteristic {
     void* (*read)(void* arg);
     void (*write)(void* arg, void* value, int value_len);
     void (*event)(void* arg, void* ev_handle, bool enable);
+
+    const void* minValue;
+    const void* maxValue;
+    const void* minValueStep;
+    const uint8_t* validValues;
+    size_t validValuesSize;
 };
 
 
 static const char* header_204_fmt = 
     "HTTP/1.1 204 No Content\r\n"
-    //"Connection: keep-alive\r\n"
+    "Connection: keep-alive\r\n"
     //"Content-type: application/hap+json\r\n"
     "\r\n";
 
 static const char* header_200_fmt = 
     "HTTP/1.1 200 OK\r\n"
-    //"Connection: keep-alive\r\n"
+    "Connection: Keep-Alive\r\n"
     "Content-Type: application/hap+json\r\n"
     "Content-Length: %d\r\n"
     "\r\n";
 
-static const char* header_event_200_fmt = 
+static const char* header_event_200_fmt =
+    "Connection: keep-alive\r\n"
     "EVENT/1.0 200 OK\r\n"
     "Content-Type: application/hap+json\r\n"
     "Content-Length: %d\r\n"
@@ -107,20 +117,22 @@ static struct hap_attr_characteristic* _attr_character_find(struct list_head* at
     return NULL;
 }
 
-static cJSON* _value_to_formatized_json(struct hap_attr_characteristic* c, void* value)
+static cJSON* _value_to_formatized_json(struct hap_attr_characteristic* c, const void* value)
 {
     switch (c->format) {
         case FORMAT_BOOL:
-            return cJSON_CreateBool(value);
+            return cJSON_CreateBool(*(bool*)(value));
         case FORMAT_UINT8:
+            return cJSON_CreateNumber(*(uint8_t*)(value));
         case FORMAT_UINT32:
+            return cJSON_CreateNumber(*(uint32_t*)(value));
         case FORMAT_UINT64:
+            return cJSON_CreateNumber(*(uint64_t*)(value));
         case FORMAT_INT:
-            return cJSON_CreateNumber((int)value);
+            return cJSON_CreateNumber(*(int*)(value));
         case FORMAT_FLOAT: {
-            int value_interger = (int)value;
-            double floating_value = (double)value_interger / 100;
-            return cJSON_CreateNumber(floating_value);
+
+            return cJSON_CreateNumber(*(double*)value);
         }
         case FORMAT_STRING:
             return cJSON_CreateString((char*)value);
@@ -186,10 +198,32 @@ static cJSON* _attr_characterisic_to_json(struct hap_attr_characteristic* c)
             value = c->initial_value;
 
         cJSON_AddItemToObject(root, "value", _value_to_formatized_json(c, value));
+
     }
     else {
         if (c->type != HAP_CHARACTER_IDENTIFY)
             cJSON_AddNullToObject(root, "value");
+    }
+
+    // Add value bounds, steps and allowed values as required.
+    if (c->minValue) {
+        cJSON_AddItemToObject(root, "minValue", _value_to_formatized_json(c, c->minValue));
+    }
+
+    if (c->maxValue) {
+        cJSON_AddItemToObject(root, "maxValue", _value_to_formatized_json(c, c->maxValue));
+    }
+
+    if (c->validValues && c->validValuesSize > 0) {
+        cJSON* values = cJSON_AddArrayToObject(root, "validValues");
+        for(int i=0; i < c->validValuesSize; i++) {
+            cJSON* item = cJSON_CreateNumber(c->validValues[i]);
+            cJSON_AddItemToArray(values, item);
+        }
+    }
+
+    if (c->minValueStep) {
+        cJSON_AddItemToObject(root, "minStep", _value_to_formatized_json(c, c->minValueStep));
     }
 
     return root;
@@ -297,6 +331,7 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, ch
 
 
     *res_body = cJSON_PrintUnformatted(root);
+    ESP_LOGD(TAG, "Sending JSON payload %s", *res_body);
     *res_body_len = strlen(*res_body);
     cJSON_Delete(root);
 
@@ -318,6 +353,11 @@ void hap_acc_characteristic_get_free(char* res_header, char* res_body)
 int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* hc, char* req_body, int req_body_len, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
 {
     cJSON* root = cJSON_Parse(req_body);
+    if (!cJSON_IsObject(root)) {
+        ESP_LOGE(TAG, "Received invalid JSON payload %s", req_body);
+        return -1;
+    }
+
     cJSON* char_array_json = cJSON_GetObjectItem(root, "characteristics");
     int nr_char = cJSON_GetArraySize(char_array_json);
     for (int i=0; i<nr_char; i++) {
@@ -341,13 +381,31 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
 
         cJSON* value_json = cJSON_GetObjectItem(char_json, "value");
         if (value_json && c->write) {
-            c->write(c->callback_arg, (void*)value_json->valueint, 0);
+            switch (c->format) {
+                case FORMAT_BOOL:
+                case FORMAT_UINT8:
+                case FORMAT_UINT32:
+                case FORMAT_UINT64:
+                case FORMAT_INT:
+                    c->write(c->callback_arg, &value_json->valueint, 0);
+                    break;
+                case FORMAT_FLOAT: {
+                    c->write(c->callback_arg, &value_json->valuedouble, 0);
+                    break;
+                }
+                case FORMAT_STRING:
+                    c->write(c->callback_arg, value_json->valuestring, 0);
+                    break;
+                default:
+                    printf("Unimplemented charac format(%d)\n", c->format);
+            }
         }
     }
 
     *res_header = calloc(1, strlen(header_204_fmt) + 1);
     strcpy(*res_header, header_204_fmt);
     *res_header_len = strlen(*res_header);
+    cJSON_Delete(root);
 
     *res_body = NULL;
     *res_body_len = 0;
@@ -357,10 +415,13 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
 
 void hap_acc_characteristic_put_free(char* res_header, char* res_body)
 {
-    if (res_header)
+    if (res_header) {
         free(res_header);
-    if (res_body)
+    }
+
+    if (res_body) {
         free(res_body);
+    }
 }
 
 int hap_acc_accessories_do(struct hap_accessory* a, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
@@ -371,6 +432,7 @@ int hap_acc_accessories_do(struct hap_accessory* a, char** res_header, int* res_
     cJSON* attr_accessories_json = _attr_accessories_to_json(&a->attr_accessories);
 
     *res_body = cJSON_PrintUnformatted(attr_accessories_json);
+    ESP_LOGD(TAG, "Sending JSON payload %s", *res_body);
     *res_body_len = strlen(*res_body);
     free(attr_accessories_json);
 
@@ -399,6 +461,7 @@ void hap_acc_event_response(void* ev, void* value, char** res_header, int* res_h
     cJSON_AddItemToArray(characteristics, char_json);
 
     *res_body = cJSON_PrintUnformatted(root);
+    ESP_LOGD(TAG, "Sending JSON payload %s", *res_body);
     *res_body_len = strlen(*res_body);
     cJSON_Delete(root);
 
@@ -879,6 +942,13 @@ void* hap_acc_service_and_characteristics_add(void* _attr_a,
         c->write = cs[i].write;
         c->event = cs[i].event;
         c->aid = attr_a->aid;
+
+        c->minValue = cs[i].minValue;
+        c->maxValue = cs[i].maxValue;
+        c->minValueStep = cs[i].minValueStep;
+        c->validValues = cs[i].validValues;
+        c->validValuesSize = cs[i].validValuesSize;
+
         _characteristic_properties_define(c);
         c++;
     }

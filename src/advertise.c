@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <esp_log.h>
 
 #include <mdns.h>
+#define TAG "adv"
 
 #include "advertise.h"
 
@@ -57,17 +59,20 @@ static void _service_txt_set(struct advertiser* adv) {
     };
 #endif
     mdns_service_txt_set(HAP_SERVICE, HAP_PROTO, hap_service_txt, ARRAY_SIZE(hap_service_txt));
+    ESP_LOGI(TAG, "MDNS updated");
 }
 
 void advertise_accessory_state_set(void* adv_instance, enum advertise_accessory_state state) {
     if (adv_instance == NULL) {
-        printf("[ERR] Invalid arg\n");
+        ESP_LOGE(TAG, "Invalid arg, adv_instance is null in advertise_accessory_state_set");
         return;
     }
 
     struct advertiser* adv = adv_instance;
-    if (adv->state == state)
+    if (adv->state == state) {
+        ESP_LOGD(TAG, "Not advertising, states are identical.");
         return;
+    }
 
     adv->state = state;
     _service_txt_set(adv);
@@ -86,6 +91,7 @@ void* advertise_accessory_add(char* name, char* id, char* host, int port, uint32
         printf("[ERR] calloc failed\n");
         return NULL;
     }
+    ESP_LOGI(TAG, "advertise 1");
 
     adv->name = name;
     adv->id = id;

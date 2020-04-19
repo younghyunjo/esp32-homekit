@@ -139,11 +139,14 @@ static void encrypt_send(struct mg_connection* nc, struct hap_connection* hc, ch
         memcpy(plain_text + header_len, body, body_len);
 
     int encrypted_len = 0;
+
+
     char* encrypted = _encrypt(hc, plain_text, strlen(plain_text), &encrypted_len);
 
     free(plain_text);
 
     mg_send(nc, encrypted, encrypted_len);
+
     _encrypt_free(encrypted);
 }
 
@@ -254,6 +257,7 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             hap_acc_characteristic_get_free(res_header, res_body);
         }
         else if (strncmp(hm->method.p, "PUT", hm->method.len) == 0) {
+
             char* res_header = NULL;
             int res_header_len = 0;
             char* res_body = NULL;
@@ -323,7 +327,7 @@ static void _hap_connection_close(void* connection, struct mg_connection* nc)
     if (hc->pair_verify)
         pair_verify_cleanup(hc->pair_setup);
 
-    xSemaphoreTake(_hap_desc->mutex, 0);
+    xSemaphoreTake(_hap_desc->mutex, portMAX_DELAY);
     list_del(&hc->list);
     xSemaphoreGive(_hap_desc->mutex);
 
@@ -343,7 +347,7 @@ static void _hap_connection_accept(void* accessory, struct mg_connection* nc)
     //INIT_LIST_HEAD(&hc->event_head);
     nc->user_data = hc;
 
-    xSemaphoreTake(_hap_desc->mutex, 0);
+    xSemaphoreTake(_hap_desc->mutex, portMAX_DELAY);
     list_add(&hc->list, &a->connections);
     xSemaphoreGive(_hap_desc->mutex);
 }
@@ -394,7 +398,7 @@ int hap_event_response(void* acc_instance, void* ev_handle, void* value)
     struct hap_accessory* a = acc_instance;
     struct hap_connection* hc;
 
-    xSemaphoreTake(_hap_desc->mutex, 0);
+    xSemaphoreTake(_hap_desc->mutex, portMAX_DELAY);
     list_for_each_entry(hc, &a->connections, list) {
         encrypt_send(hc->nc, hc, res_header, res_header_len, res_body, body_len);
     }
@@ -432,7 +436,7 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
 
     struct hap_accessory* a = calloc(1, sizeof(struct hap_accessory));
     if (a == NULL) {
-        ESP_LOGE(TAG, "calloc failed. size:%d", sizeof(struct hap_accessory));
+        ESP_LOGE(TAG, "calloc failed. size: %d", (int)sizeof(struct hap_accessory));
         return NULL;
     }
 
@@ -455,6 +459,7 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
                                            ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
     a->bind = httpd_bind(port, a);
     _hap_desc->nr_accessory = 1;
+    ESP_LOGI(TAG, "HAP registered");
 
     return a;
 }
@@ -488,4 +493,9 @@ void hap_init(void)
     };
 
     httpd_init(&httpd_ops);
+}
+
+void hap_advertise(void* handle){
+    struct hap_accessory* acc = handle;
+    advertise_accessory_state_set(acc->advertise, ADVERTISE_ACCESSORY_STATE_PAIRED);
 }

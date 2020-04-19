@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <esp_log.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,19 +8,29 @@
 #include "mongoose.h"
 #include "httpd.h"
 
+#define TAG "httpd"
+#define HTTPD_STACK (1024 * 8)
+
 static struct httpd_ops _ops;
 static struct mg_mgr _mgr;
 static SemaphoreHandle_t _httpd_mutex;
+static bool s_go = true;
 
 static void _httpd_task(void* arg) {
-    while (1) {
-        xSemaphoreTake(_httpd_mutex, 0);
-        mg_mgr_poll(&_mgr, 1000);
-        xSemaphoreGive(_httpd_mutex);
+    LWIP_UNUSED_ARG(arg);
+
+    while (s_go) {
+        if (xSemaphoreTake(_httpd_mutex, 1000 / portMAX_DELAY) == pdTRUE) {
+            mg_mgr_poll(&_mgr, 500);
+            xSemaphoreGive(_httpd_mutex);
+        }
+        vTaskDelay(100); // yield to allow semaphore to be taken
     }
 }
 
 static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_data) {
+    LWIP_UNUSED_ARG(p);
+
     switch (ev)     {
         case MG_EV_ACCEPT: {
             if (_ops.accept) {
@@ -28,12 +39,12 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_
 
             char addr[32];
             mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
-                                MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
-            printf("[HTTPD] Connection %p from %s\n", nc, addr);
+                                (unsigned)MG_SOCK_STRINGIFY_IP | (unsigned)MG_SOCK_STRINGIFY_PORT);
+            ESP_LOGI(TAG, "Connection %p from %s", nc, addr);
             break;
         }
         case MG_EV_RECV: {
-            printf("[HTTPD] MG_EV_RECV\n");
+            ESP_LOGD(TAG, "MG_EV_RECV");
             if (_ops.recv) {
                 _ops.recv(user_data, nc, nc->recv_mbuf.buf, nc->recv_mbuf.len);
             }
@@ -43,19 +54,18 @@ static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_
             break;
         }
         case MG_EV_CLOSE: {
-            printf("[HTTPD] MG_EV_CLOSE");
-            printf("Connection %p closed\n", nc);
+            ESP_LOGI(TAG, "Connection closed - MG_EV_CLOSE");
             if (_ops.close) {
                 _ops.close(user_data, nc);
             }
             break;
         }
         case MG_EV_SEND: {
-            printf("[HTTPD] MG_EV_SEND. %d\n", *((int*)user_data));
+            ESP_LOGD(TAG, "MG_EV_SEND. %d", *((int*)user_data));
             break;
         }
         default: {
-            printf("[HTTPD] DEFAULT:%d\n", ev);
+            ESP_LOGD(TAG, "DEFAULT:%d", ev);
             break;
         }
     }
@@ -65,27 +75,32 @@ void* httpd_bind(int port, void* user_data) {
     if (port <= 0)
         return NULL;
 
+    ESP_LOGI(TAG, "Binding");
+
     struct mg_connection* nc = NULL;
-    char port_string[8] = {0,};
+    char port_string[11] = {0,};
     sprintf(port_string, "%d", port);
 
-    xSemaphoreTake(_httpd_mutex, 0);
+    bool taken = xSemaphoreTake(_httpd_mutex, portMAX_DELAY) == pdTRUE;
+    ESP_LOGI(TAG, "Got semaphore");
 
     nc = mg_bind(&_mgr, port_string, mg_ev_handler, user_data);
     if (nc == NULL) {
-        printf("[ERR] mg_bind failed]n");
+        ESP_LOGE(TAG, "mg_bind failed]n");
         goto err_mg_bind;
     }
 
     mg_set_protocol_http_websocket(nc);
 
 err_mg_bind:
-    xSemaphoreGive(_httpd_mutex);
+    if (taken) {
+        xSemaphoreGive(_httpd_mutex);
+    }
+    ESP_LOGI("httpd", "Done.");
     return nc;
 }
 
 void httpd_init(struct httpd_ops* ops) {
-#define HTTPD_STACK (1024*8)
     mg_mgr_init(&_mgr, NULL);
     _httpd_mutex = xSemaphoreCreateMutex();
     _ops = *ops;

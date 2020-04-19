@@ -31,6 +31,8 @@ enum hap_accessory_category {
     HAP_ACCESSORY_CATEGORY_IP_CAMERA,
     HAP_ACCESSORY_CATEGORY_VIDEO_DOOR_BEEL,
     HAP_ACCESSORY_CATEGORY_AIR_PURIFIER,
+    homekit_accessory_category_heater = 20,
+    homekit_accessory_category_target_controller = 32,
 };
 
 enum hap_service_type {
@@ -68,6 +70,7 @@ enum hap_service_type {
     HAP_SERVICE_SLAT = 0xB9,
     HAP_SERVICE_FILTER_MAINTENANCE = 0xBA,
     HAP_SERVICE_AIR_PURIFIER = 0xBB,
+    HAP_SERVICE_HEATER_COOLER = 0xBC,
     HAP_SERVICE_SERVICE_LABEL = 0xCC,
 };
 
@@ -178,7 +181,17 @@ enum hap_characteristic_type {
     HAP_CHARACTER_SERVICE_LABEL_INDEX = 0xCB,
     HAP_CHARACTER_SERVICE_LABEL_NAMESPACE = 0xCD,
     HAP_CHARACTER_COLOR_TEMPERATURE = 0xCE,
+
+    HAP_CHARACTER_CURRENT_HEATER_COOLER_STATE = 0xB1,
+    HAP_CHARACTER_TARGET_HEATER_COOLER_STATE = 0xB2,
+
 };
+
+#define HAP_TARGET_HEATING_COOLING_STATE_OFF 0
+#define HAP_TARGET_HEATING_COOLING_STATE_HEAT 1
+#define HAP_TARGET_HEATING_COOLING_STATE_COOL 2
+#define HAP_TARGET_HEATING_COOLING_STATE_AUTO 3
+
 
 struct hap_characteristic {
     enum hap_characteristic_type type;
@@ -188,7 +201,20 @@ struct hap_characteristic {
     void* (*read)(void* arg);
     void (*write)(void* arg, void* value, int value_len);
     void (*event)(void* arg, void* ev_handle, bool enable);
+
+    const void* minValue;
+    const void* maxValue;
+    const void* minValueStep;
+    const uint8_t * validValues;
+    const size_t validValuesSize;
 };
+
+#define NO_VALUE_SPECIFICS \
+    NULL, \
+    NULL, \
+    NULL, \
+    NULL, \
+    0
 
 typedef struct {
     void (*hap_object_init)(void* arg);
@@ -204,6 +230,8 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
 
 
 void hap_init(void);
+void hap_advertise(void* handle);
+
 
 #ifdef __cplusplus
 }

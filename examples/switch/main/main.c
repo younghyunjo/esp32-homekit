@@ -23,8 +23,8 @@
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
 #if 1
-#define EXAMPLE_ESP_WIFI_SSID "unibj"
-#define EXAMPLE_ESP_WIFI_PASS "12673063"
+#define EXAMPLE_ESP_WIFI_SSID "ortyma"
+#define EXAMPLE_ESP_WIFI_PASS "pho3nixlerebel103"
 #endif
 #if 0
 #define EXAMPLE_ESP_WIFI_SSID "NO_RUN"
@@ -105,6 +105,7 @@ void hap_object_init(void* arg)
     hap_service_and_characteristics_add(a, accessory_object, HAP_SERVICE_SWITCHS, cc, ARRAY_SIZE(cc));
 }
 
+hap_accessory_callback_t callback;
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -117,15 +118,19 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
                  ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
         {
+            ESP_LOGI(TAG, "HAP init");
             hap_init();
+            ESP_LOGI(TAG, "--- oK HAP init");
 
             uint8_t mac[6];
             esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
             char accessory_id[32] = {0,};
+            ESP_LOGI(TAG, "1");
             sprintf(accessory_id, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-            hap_accessory_callback_t callback;
+            ESP_LOGI(TAG, "2");
             callback.hap_object_init = hap_object_init;
             a = hap_accessory_register((char*)ACCESSORY_NAME, accessory_id, (char*)"053-58-197", (char*)MANUFACTURER_NAME, HAP_ACCESSORY_CATEGORY_OTHER, 811, 1, NULL, &callback);
+            ESP_LOGI(TAG, "3");
         }
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:

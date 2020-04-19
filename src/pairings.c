@@ -79,12 +79,13 @@ static int _add(void* iosdevices, uint8_t* device_msg, int device_msg_length, ui
     struct tlv* identifier = tlv_decode(device_msg, device_msg_length, HAP_TLV_TYPE_IDENTIFIER);
     struct tlv* public_key = tlv_decode(device_msg, device_msg_length, HAP_TLV_TYPE_PUBLICKEY);
     struct tlv* permission = tlv_decode(device_msg, device_msg_length, HAP_TLV_TYPE_PERMISSION);
-    printf("[PAIRINGS] ADD ID:%.*s KEY:%.*s PERM:0x%x,%d\n", 
-            identifier->length, (uint8_t*)&identifier->value,
-            public_key->length, (uint8_t*)&public_key->value,
-            (uint8_t*)&permission->value, (uint8_t*)&permission->value);
 
-    iosdevice_pairings_add(iosdevices, (uint8_t*)&identifier->value, (uint8_t*)&public_key->value);
+    printf("[PAIRINGS] ADD ID:%.*s KEY:%.*s PERM:0x%x,%d\n",
+            identifier->length, (char*)&identifier->value,
+            public_key->length, (char*)&public_key->value,
+            permission->value[0], permission->value[0]);
+
+    iosdevice_pairings_add(iosdevices, (char*)&identifier->value, (char*)&public_key->value);
 
     uint8_t state[] = {2};
     *acc_msg_length = tlv_encode_length(sizeof(state));
@@ -108,7 +109,7 @@ static int _remove(void* iosdevices, uint8_t* device_msg, int device_msg_length,
         return -1;
     }
     printf("%.*s\n",remove_identifier->length , ((uint8_t*)&remove_identifier->value));
-    iosdevice_pairings_remove(iosdevices, (uint8_t*)&remove_identifier->value);
+    iosdevice_pairings_remove(iosdevices, (char*)&remove_identifier->value);
 #if 0
     for (int i=0; i<remove_identifier->length; i++) {
         printf("%X ", ((uint8_t*)&remove_identifier->value)[i]);
