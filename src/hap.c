@@ -325,11 +325,13 @@ static void _hap_connection_close(void* connection, struct mg_connection* nc)
         pair_setup_cleanup(hc->pair_setup);
 
     if (hc->pair_verify)
-        pair_verify_cleanup(hc->pair_setup);
+        pair_verify_cleanup(hc->pair_verify);
 
     xSemaphoreTake(_hap_desc->mutex, portMAX_DELAY);
     list_del(&hc->list);
     xSemaphoreGive(_hap_desc->mutex);
+
+    ESP_LOGI(TAG, "Resources freed for connection");
 
     free(hc);
 }
