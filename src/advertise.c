@@ -46,21 +46,21 @@ static void _service_txt_set(struct advertiser* adv) {
         {"ci", adv->service_txt_ci},
     };
 
-#if 0
-    const char* hap_service_txt[] = {
-        service_txt_c_sharp,
-        "ff=0",
-        "pv=1.0",
-        service_txt_id,
-        service_txt_md,
-        "s#=1",
-        service_txt_sf,
-        service_txt_ci
-    };
-#endif
     mdns_service_txt_set(HAP_SERVICE, HAP_PROTO, hap_service_txt, ARRAY_SIZE(hap_service_txt));
-    ESP_LOGI(TAG, "MDNS updated");
+    ESP_LOGD(TAG, "MDNS updated");
 }
+
+
+void advertise_accessory_state(void* adv_instance) {
+    if (adv_instance == NULL) {
+        ESP_LOGE(TAG, "Invalid arg, adv_instance is null in advertise_accessory_state_set");
+        return;
+    }
+
+    struct advertiser* adv = adv_instance;
+    _service_txt_set(adv);
+}
+
 
 void advertise_accessory_state_set(void* adv_instance, enum advertise_accessory_state state) {
     if (adv_instance == NULL) {

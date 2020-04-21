@@ -14,7 +14,11 @@ enum advertise_accessory_state {
     ADVERTISE_ACCESSORY_STATE_NOT_PAIRED,
     ADVERTISE_ACCESSORY_STATE_PAIRED,
 };
+
+void advertise_accessory_state(void* adv_instance);
+
 void advertise_accessory_state_set(void* adv_instance, enum advertise_accessory_state state);
+
 void* advertise_accessory_add(char* name, char* id, char* host, int port, uint32_t config_number,
                               enum hap_accessory_category category, enum advertise_accessory_state state);
 

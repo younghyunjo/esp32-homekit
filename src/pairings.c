@@ -163,11 +163,3 @@ int pairings_do(void* iosdevices, char* req_body, int req_body_len,
     return 0;
 }
 
-void pairings_do_free(char* res_header, char*res_body)
-{
-    if (res_header)
-        free(res_header);
-
-    if (res_body)
-        free(res_body);
-}

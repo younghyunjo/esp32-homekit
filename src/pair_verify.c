@@ -226,15 +226,6 @@ int pair_verify_do(void* _pv, const char* req_body, int req_body_len,
     return 0;
 }
 
-void pair_verify_do_free(char* res_header, char*res_body)
-{
-    if (res_header)
-        free(res_header);
-
-    if (res_body)
-        free(res_body);
-}
-
 void* pair_verify_init(char* acc_id, void* iosdevices, uint8_t* public_key, uint8_t* private_key)
 {
     struct pair_verify* pv = calloc(1, sizeof(struct pair_verify));

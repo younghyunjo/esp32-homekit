@@ -150,35 +150,44 @@ static void encrypt_send(struct mg_connection* nc, struct hap_connection* hc, ch
     _encrypt_free(encrypted);
 }
 
+void _free_response(const char *res_header, const char *res_body) {// Clean up
+    if (res_body != NULL) {
+        free(res_body);
+    }
+    if (res_header != NULL) {
+        free(res_header);
+    }
+}
+
 static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len)
 {
     struct hap_connection* hc = connection;
     struct hap_accessory* a = hc->a;
-    struct http_message shm, *hm = &shm;
+    struct http_message hm;
+
+    char* res_header = NULL;
+    int res_header_len = 0;
+    char* res_body = NULL;
+    int body_len = 0;
 
     char* http_raw_msg = msg;
     int http_raw_msg_len = len;
-    mg_parse_http(http_raw_msg, http_raw_msg_len, hm, 1);
+    mg_parse_http(http_raw_msg, http_raw_msg_len, &hm, 1);
 
     char addr[32];
-    mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
-            MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
+    mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr), (unsigned)MG_SOCK_STRINGIFY_IP | (unsigned)MG_SOCK_STRINGIFY_PORT);
 
-    ESP_LOGI(TAG, "HTTP request from %s: %.*s %.*s", addr, (int) hm->method.len,
-            hm->method.p, (int) hm->uri.len, hm->uri.p);
+    ESP_LOGI(TAG, "HTTP request from %s: %.*s %.*s", addr, (int) hm.method.len,
+            hm.method.p, (int) hm.uri.len, hm.uri.p);
 
-    if (strncmp(hm->uri.p, "/pair-setup", strlen("/pair-setup")) == 0) {
+
+
+    if (strncmp(hm.uri.p, "/pair-setup", strlen("/pair-setup")) == 0) {
         if (hc->pair_setup == NULL) {
             hc->pair_setup = pair_setup_init(a->id, a->pincode, a->iosdevices, a->keys.public, a->keys.private);
         }
 
-        char* res_header = NULL;
-        int res_header_len = 0;
-
-        char* res_body = NULL;
-        int body_len = 0;
-
-        pair_setup_do(hc->pair_setup, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
+        pair_setup_do(hc->pair_setup, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len);
 
         if (res_header) {
             mg_send(nc, res_header, res_header_len);
@@ -187,21 +196,13 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
         if (res_body) {
             mg_send(nc, res_body, body_len);
         }
-
-        pair_setup_do_free(res_header, res_body);
     }
-    else if (strncmp(hm->uri.p, "/pair-verify", hm->uri.len) == 0) {
+    else if (strncmp(hm.uri.p, "/pair-verify", hm.uri.len) == 0) {
         if (hc->pair_verify == NULL) {
             hc->pair_verify = pair_verify_init(a->id, a->iosdevices, a->keys.public, a->keys.private);
         }
 
-        char* res_header = NULL;
-        int res_header_len = 0;
-
-        char* res_body = NULL;
-        int body_len = 0;
-
-        pair_verify_do(hc->pair_verify, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len, &hc->pair_verified, hc->session_key);
+        pair_verify_do(hc->pair_verify, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len, &hc->pair_verified, hc->session_key);
 
         if (res_header) {
             mg_send(nc, res_header, res_header_len);
@@ -216,75 +217,44 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             hkdf_key_get(HKDF_KEY_TYPE_CONTROL_WRITE, (uint8_t*)hc->session_key, CURVE25519_SECRET_LENGTH, hc->decrypt_key);
         }
 
-        pair_verify_do_free(res_header, res_body);
-    }
-    else if (strncmp(hm->uri.p, "/accessories", hm->uri.len) == 0) {
-        char* res_header = NULL;
-        int res_header_len = 0;
-
-        char* res_body = NULL;
-        int body_len = 0;
+    }  else if (strncmp(hm.uri.p, "/accessories", hm.uri.len) == 0) {
 
         hap_acc_accessories_do(a, &res_header, &res_header_len, &res_body, &body_len);
-#ifdef DEBUG
-        {
-            ESP_LOGI(TAG, "RESPONSE");
-            ESP_LOGI(TAG, "%s%s", res_header, res_body);
-        }
-#endif
         encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
-        hap_acc_accessories_do_free(res_header, res_body);
-    }
-    else if (strncmp(hm->uri.p, "/characteristics", hm->uri.len) == 0) {
-        if (strncmp(hm->method.p, "GET", hm->method.len) == 0) {
-            char* query = (char*)hm->query_string.p;
-            int query_len = (int)hm->query_string.len;
-            char* res_header = NULL;
+
+    } else if (strncmp(hm.uri.p, "/characteristics", hm.uri.len) == 0) {
+
+        if (strncmp(hm.method.p, "GET", hm.method.len) == 0) {
+            char *query = (char *) hm.query_string.p;
+            int query_len = (int) hm.query_string.len;
+            char *res_header = NULL;
             int res_header_len = 0;
-            char* res_body = NULL;
+            char *res_body = NULL;
             int body_len = 0;
 
             hap_acc_characteristic_get(a, query, query_len, &res_header, &res_header_len, &res_body, &body_len);
-#ifdef DEBUG
-            {
-                ESP_LOGI(TAG, "------REQUEST-----");
-                ESP_LOGI(TAG, "%.*s", (int)hm->query_string.len, hm->query_string.p);
-                ESP_LOGI(TAG, "------RESPONSE-----");
-                ESP_LOGI(TAG, "%s%s", res_header, res_body);
+            ESP_LOGD(TAG, "------REQUEST-----");
+            ESP_LOGD(TAG, "%.*s", (int)hm.query_string.len, hm.query_string.p);
+            ESP_LOGD(TAG, "------RESPONSE-----");
+            ESP_LOGD(TAG, "%s%s", res_header, res_body);
+
+            if (hc->pair_verified) {
+                encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
+            } else {
+                mg_send(hc->nc, res_body, body_len);
             }
-#endif
+        } else if (strncmp(hm.method.p, "PUT", hm.method.len) == 0) {
+            hap_acc_characteristic_put(a, (void *) hc, (char *) hm.body.p, hm.body.len, &res_header, &res_header_len,
+                                       &res_body, &body_len);
+            ESP_LOGD(TAG, "------REQUEST-----");
+            ESP_LOGD(TAG, "%.*s", (int)hm.query_string.len, hm.query_string.p);
+            ESP_LOGD(TAG, "%.*s", (int)hm.body.len, (char*)hm.body.p);
+            ESP_LOGD(TAG, "------RESPONSE-----");
+            ESP_LOGD(TAG, "%s", res_header);
             encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
-            hap_acc_characteristic_get_free(res_header, res_body);
         }
-        else if (strncmp(hm->method.p, "PUT", hm->method.len) == 0) {
-
-            char* res_header = NULL;
-            int res_header_len = 0;
-            char* res_body = NULL;
-            int body_len = 0;
-
-            hap_acc_characteristic_put(a, (void*)hc, (char*)hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
-#ifdef DEBUG
-            {
-                ESP_LOGI(TAG, "------REQUEST-----");
-                ESP_LOGI(TAG, "%.*s", (int)hm->query_string.len, hm->query_string.p);
-                ESP_LOGI(TAG, "%.*s", (int)hm->body.len, (char*)hm->body.p);
-                ESP_LOGI(TAG, "------RESPONSE-----");
-                ESP_LOGI(TAG, "%s", res_header);
-            }
-#endif
-            encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
-            hap_acc_characteristic_put_free(res_header, res_body);
-        }
-    }
-    else if (strncmp(hm->uri.p, "/pairings", hm->uri.len) == 0) {
-        char* res_header = NULL;
-        int res_header_len = 0;
-
-        char* res_body = NULL;
-        int body_len = 0;
-
-        pairings_do(a->iosdevices, hm->body.p, hm->body.len, &res_header, &res_header_len, &res_body, &body_len);
+    } else if (strncmp(hm.uri.p, "/pairings", hm.uri.len) == 0) {
+        pairings_do(a->iosdevices, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len);
         if (res_header) {
             mg_send(nc, res_header, res_header_len);
         }
@@ -293,15 +263,12 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             mg_send(nc, res_body, body_len);
         }
         encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
-        pairings_do_free(res_header, res_body);
+    } else {
+        ESP_LOGW(TAG, "Unhandled request: %.*s %c%c%c%c",
+                (int) hm.uri.len, hm.uri.p,  hm.uri.p[0], hm.uri.p[1], hm.uri.p[2], hm.uri.p[3]);
     }
-    else {
-        ESP_LOGW(TAG, "NOT HANDLED");
-#ifdef DEBUG
-        ESP_LOGW(TAG, "%.*s", (int) hm->uri.len, hm->uri.p);
-        ESP_LOGW(TAG, "%c%c%c%c", hm->uri.p[0], hm->uri.p[1], hm->uri.p[2], hm->uri.p[3]);
-#endif
-    }
+
+    _free_response(res_header, res_body);
 }
 
 static void _msg_recv(void* connection, struct mg_connection* nc, char* msg, int len)
@@ -409,8 +376,7 @@ int hap_event_response(void* acc_instance, void* ev_handle, void* value)
     ESP_LOGI(TAG, "%.*s", res_header_len, res_header);
     ESP_LOGI(TAG, "%.*s", body_len, res_body);
 
-    hap_acc_event_response_free(res_header, res_body);
-
+    _free_response(res_header, res_body);
     return 0;
 }
 
@@ -499,5 +465,5 @@ void hap_init(void)
 
 void hap_advertise(void* handle){
     struct hap_accessory* acc = handle;
-    advertise_accessory_state_set(acc->advertise, ADVERTISE_ACCESSORY_STATE_PAIRED);
+    advertise_accessory_state(acc->advertise);
 }

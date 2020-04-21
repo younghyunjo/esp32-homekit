@@ -8,7 +8,6 @@ extern "C" {
 
 int pairings_do(void* iosdevices, char* req_body, int req_body_len, 
         char** res_header, int* res_header_len, char** res_body, int* res_body_len);
-void pairings_do_free(char* res_header, char*res_body);
 
 #ifdef __cplusplus
 }

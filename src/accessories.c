@@ -95,9 +95,6 @@ static const char* header_event_200_fmt =
     "Content-Length: %d\r\n"
     "\r\n";
 
-int accessories_do(struct hap_accessory* a, char** res_header, int* res_header_len, char** res_body, int* res_body_len);
-void accessories_do_free(char* res_header, char* res_body);
-
 static struct hap_attr_characteristic* _attr_character_find(struct list_head* attr_accessories, int aid, int iid)
 {
     struct hap_acc_accessory* a_ptr;
@@ -295,7 +292,11 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, ch
     cJSON* characteristics = cJSON_CreateArray();
     cJSON_AddItemToObject(root, "characteristics", characteristics);
 
-    sscanf(query, "id=%d.%d", &aid, &iid);
+    if (query == NULL || len ==0  || EOF == sscanf(query, "id=%d.%d", &aid, &iid)) {
+        ESP_LOGE(TAG, "Missing query parameter 'id'");
+        goto done;
+    }
+
     struct hap_attr_characteristic* c = _attr_character_find(&a->attr_accessories, aid, iid);
     if (c != NULL) {
         cJSON* char_json = _characteristic_read(c);
@@ -312,7 +313,11 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, ch
     len -= nr_skip;
 
     while (len > 0) {
-        sscanf(query, ",%d.%d", &aid, &iid);
+        if (EOF == sscanf(query, ",%d.%d", &aid, &iid)) {
+            ESP_LOGE(TAG, "'id' parameter list is incorrectly formatted");
+            goto done;
+        }
+
         c = _attr_character_find(&a->attr_accessories, aid, iid);
         if (c != NULL) {
             cJSON* char_json = _characteristic_read(c);
@@ -330,6 +335,7 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, ch
     }
 
 
+done:
     *res_body = cJSON_PrintUnformatted(root);
     ESP_LOGD(TAG, "Sending JSON payload %s", *res_body);
     *res_body_len = strlen(*res_body);
@@ -342,13 +348,6 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, ch
     return 0;
 }
 
-void hap_acc_characteristic_get_free(char* res_header, char* res_body)
-{
-    if (res_header)
-        free(res_header);
-    if (res_body)
-        free(res_body);
-}
 
 int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* hc, char* req_body, int req_body_len, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
 {
@@ -413,17 +412,6 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
     return 0;
 }
 
-void hap_acc_characteristic_put_free(char* res_header, char* res_body)
-{
-    if (res_header) {
-        free(res_header);
-    }
-
-    if (res_body) {
-        free(res_body);
-    }
-}
-
 int hap_acc_accessories_do(struct hap_accessory* a, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
 {
     if (list_empty(&a->attr_accessories)) {
@@ -434,21 +422,13 @@ int hap_acc_accessories_do(struct hap_accessory* a, char** res_header, int* res_
     *res_body = cJSON_PrintUnformatted(attr_accessories_json);
     ESP_LOGD(TAG, "Sending JSON payload %s", *res_body);
     *res_body_len = strlen(*res_body);
-    free(attr_accessories_json);
+    cJSON_Delete(attr_accessories_json);
 
     *res_header = calloc(1, strlen(header_200_fmt) + 16);
     sprintf(*res_header, header_200_fmt, *res_body_len);
     *res_header_len = strlen(*res_header);
 
     return 0;
-}
-
-void hap_acc_accessories_do_free(char* res_header, char* res_body)
-{
-    if (res_header)
-        free(res_header);
-    if (res_body)
-        free(res_body);
 }
 
 void hap_acc_event_response(void* ev, void* value, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
@@ -468,14 +448,6 @@ void hap_acc_event_response(void* ev, void* value, char** res_header, int* res_h
     *res_header = calloc(1, strlen(header_event_200_fmt) + 16);
     sprintf(*res_header, header_event_200_fmt, *res_body_len);
     *res_header_len = strlen(*res_header);
-}
-
-void hap_acc_event_response_free(char* res_header, char* res_body)
-{
-    if (res_header)
-        free(res_header);
-    if (res_body)
-        free(res_body);
 }
 
 void* hap_acc_accessory_add(void* acc_instance)
