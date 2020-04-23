@@ -36,7 +36,7 @@ int nvs_get(char* key, uint8_t* value, int len)
 
     int value_length = _value_length_get(handle, key);
     if (value_length == 0) {
-        ESP_LOGE(TAG, "nothing saved. key:%s\n", key);
+        ESP_LOGD(TAG, "nothing saved. key:%s\n", key);
         nvs_close(handle);
         return 0;
     }

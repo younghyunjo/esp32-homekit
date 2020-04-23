@@ -5,6 +5,7 @@
 
 #include <cJSON.h>
 #include <esp_log.h>
+#include <esp_http_server.h>
 
 #include "advertise.h"
 #include "chacha20_poly1305.h"
@@ -12,13 +13,12 @@
 #include "hap.h"
 #include "hap_internal.h"
 #include "accessories.h"
-#include "httpd.h"
 #include "iosdevice.h"
-#include "mongoose.h"
 #include "nvs.h"
 #include "pair_setup.h"
 #include "pair_verify.h"
 #include "pairings.h"
+#include "httpd.h"
 
 //#define DEBUG
 
@@ -31,7 +31,7 @@ struct hap {
 
 static struct hap* _hap_desc;
 
-static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len);
+static void _plain_msg_recv(void* connection, httpd_req_t* nc, char* msg, int len);
 
 static int _decrypt(struct hap_connection* hc, char* encrypted, int len, char* decrypted, uint8_t** saveptr)
 {
@@ -68,7 +68,7 @@ static int _decrypt(struct hap_connection* hc, char* encrypted, int len, char* d
     return decrypted_len;;
 }
 
-static void _encrypted_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len) 
+static void _encrypted_msg_recv(void* connection, struct httpd_req_t* nc, char* msg, int len) 
 {
     char* decrypted = calloc(1, len);
     if (decrypted == NULL) {
@@ -129,7 +129,7 @@ static void _encrypt_free(char* msg)
         free(msg);
 }
 
-static void encrypt_send(struct mg_connection* nc, struct hap_connection* hc, char* res_header, int header_len, char* body, int body_len)
+static void encrypt_send(struct httpd_req_t* nc, struct hap_connection* hc, char* res_header, int header_len, char* body, int body_len)
 {
     char* plain_text = calloc(1, header_len + body_len + 64);
     if (res_header)
@@ -145,7 +145,7 @@ static void encrypt_send(struct mg_connection* nc, struct hap_connection* hc, ch
 
     free(plain_text);
 
-    mg_send(nc, encrypted, encrypted_len);
+    //WILLC mg_send(nc, encrypted, encrypted_len);
 
     _encrypt_free(encrypted);
 }
@@ -159,11 +159,10 @@ void _free_response(const char *res_header, const char *res_body) {// Clean up
     }
 }
 
-static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* msg, int len)
+static void _plain_msg_recv(void* connection, httpd_req_t* nc, char* msg, int len)
 {
     struct hap_connection* hc = connection;
     struct hap_accessory* a = hc->a;
-    struct http_message hm;
 
     char* res_header = NULL;
     int res_header_len = 0;
@@ -172,11 +171,11 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
 
     char* http_raw_msg = msg;
     int http_raw_msg_len = len;
-    mg_parse_http(http_raw_msg, http_raw_msg_len, &hm, 1);
+    //WILLC mg_parse_http(http_raw_msg, http_raw_msg_len, &hm, 1);
 
     char addr[32];
-    mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr), (unsigned)MG_SOCK_STRINGIFY_IP | (unsigned)MG_SOCK_STRINGIFY_PORT);
-
+    //WILLC mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr), (unsigned)MG_SOCK_STRINGIFY_IP | (unsigned)MG_SOCK_STRINGIFY_PORT);
+/*
     ESP_LOGI(TAG, "HTTP request from %s: %.*s %.*s", addr, (int) hm.method.len,
             hm.method.p, (int) hm.uri.len, hm.uri.p);
 
@@ -190,11 +189,11 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
         pair_setup_do(hc->pair_setup, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len);
 
         if (res_header) {
-            mg_send(nc, res_header, res_header_len);
+            //WILLC mg_send(nc, res_header, res_header_len);
         }
 
         if (res_body) {
-            mg_send(nc, res_body, body_len);
+            //WILLC mg_send(nc, res_body, body_len);
         }
     }
     else if (strncmp(hm.uri.p, "/pair-verify", hm.uri.len) == 0) {
@@ -205,11 +204,11 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
         pair_verify_do(hc->pair_verify, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len, &hc->pair_verified, hc->session_key);
 
         if (res_header) {
-            mg_send(nc, res_header, res_header_len);
+            //WILLC mg_send(nc, res_header, res_header_len);
         }
 
         if (res_body) {
-            mg_send(nc, res_body, body_len);
+            //WILLC mg_send(nc, res_body, body_len);
         }
 
         if (hc->pair_verified) {
@@ -241,7 +240,7 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
             if (hc->pair_verified) {
                 encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
             } else {
-                mg_send(hc->nc, res_body, body_len);
+                //WILLC mg_send(hc->nc, res_body, body_len);
             }
         } else if (strncmp(hm.method.p, "PUT", hm.method.len) == 0) {
             hap_acc_characteristic_put(a, (void *) hc, (char *) hm.body.p, hm.body.len, &res_header, &res_header_len,
@@ -256,11 +255,11 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
     } else if (strncmp(hm.uri.p, "/pairings", hm.uri.len) == 0) {
         pairings_do(a->iosdevices, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len);
         if (res_header) {
-            mg_send(nc, res_header, res_header_len);
+            //WILLC mg_send(nc, res_header, res_header_len);
         }
 
         if (res_body) {
-            mg_send(nc, res_body, body_len);
+            //WILLC mg_send(nc, res_body, body_len);
         }
         encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
     } else {
@@ -269,9 +268,10 @@ static void _plain_msg_recv(void* connection, struct mg_connection* nc, char* ms
     }
 
     _free_response(res_header, res_body);
+    */
 }
 
-static void _msg_recv(void* connection, struct mg_connection* nc, char* msg, int len)
+static void _msg_recv(void* connection, struct httpd_req_t* nc, char* msg, int len)
 {
     struct hap_connection* hc = connection;
 
@@ -283,7 +283,7 @@ static void _msg_recv(void* connection, struct mg_connection* nc, char* msg, int
     }
 }
 
-static void _hap_connection_close(void* connection, struct mg_connection* nc)
+static void _hap_connection_close(void* connection, struct httpd_req_t* nc)
 {
     struct hap_connection* hc = connection;
 
@@ -303,7 +303,7 @@ static void _hap_connection_close(void* connection, struct mg_connection* nc)
     free(hc);
 }
 
-static void _hap_connection_accept(void* accessory, struct mg_connection* nc)
+static void _hap_connection_accept(void* accessory, httpd_req_t* nc)
 {
     struct hap_accessory* a = accessory;
     struct hap_connection* hc = calloc(1, sizeof(struct hap_connection));
@@ -314,7 +314,7 @@ static void _hap_connection_accept(void* accessory, struct mg_connection* nc)
 
 
     //INIT_LIST_HEAD(&hc->event_head);
-    nc->user_data = hc;
+    //WILLC nc->user_data = hc;
 
     xSemaphoreTake(_hap_desc->mutex, portMAX_DELAY);
     list_add(&hc->list, &a->connections);
@@ -421,11 +421,13 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
     INIT_LIST_HEAD(&a->connections);
     INIT_LIST_HEAD(&a->attr_accessories);
 
+    httpd_init(port);
+
     _accessory_ltk_load(a);
     a->iosdevices = iosdevice_pairings_init(a->id);
     a->advertise = advertise_accessory_add(a->name, a->id, a->vendor, a->port, a->config_number, a->category,
                                            ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
-    a->bind = httpd_bind(port, a);
+    //WILLC a->bind = httpd_bind(port, a);
     _hap_desc->nr_accessory = 1;
     ESP_LOGI(TAG, "HAP registered");
 
@@ -443,7 +445,7 @@ void hap_accessory_remove(void* acc_instance) {
     free(a);
 }
 
-void hap_init(void)
+void hap_init()
 {
     if (_hap_desc)
         return;
@@ -454,6 +456,8 @@ void hap_init(void)
 
     vSemaphoreCreateBinary(_hap_desc->mutex);
 
+    //WILLC
+    /*
     struct httpd_ops httpd_ops = {
         .accept = _hap_connection_accept,
         .close = _hap_connection_close,
@@ -461,6 +465,7 @@ void hap_init(void)
     };
 
     httpd_init(&httpd_ops);
+     */
 }
 
 void hap_advertise(void* handle){

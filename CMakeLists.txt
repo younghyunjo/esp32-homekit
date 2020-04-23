@@ -9,6 +9,7 @@ set(COMPONENT_REQUIRES
         json
         wpa_supplicant
         esp32-wolfssl
+        esp_http_server
         )
 
 set(COMPONENT_ADD_INCLUDEDIRS

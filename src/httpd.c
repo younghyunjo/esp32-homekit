@@ -1,108 +1,169 @@
-
-#include <stdio.h>
-#include <esp_log.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-#include "mongoose.h"
 #include "httpd.h"
 
+#include <esp_wifi.h>
+#include <esp_event.h>
+#include <esp_http_server.h>
+#include <esp_log.h>
+#include <esp_event_base.h>
+
 #define TAG "httpd"
-#define HTTPD_STACK (1024 * 8)
 
-static struct httpd_ops _ops;
-static struct mg_mgr _mgr;
-static SemaphoreHandle_t _httpd_mutex;
-static bool s_go = true;
+static httpd_config_t s_config = HTTPD_DEFAULT_CONFIG();
+static httpd_handle_t s_server = NULL;
 
-static void _httpd_task(void* arg) {
+esp_err_t _connection_opened(httpd_handle_t hd, int sockfd) {
+    ESP_LOGW(TAG, "Connection opened.");
+
+    return ESP_OK;
+}
+
+esp_err_t _connection_closed(httpd_handle_t hd, int sockfd) {
+    ESP_LOGW(TAG, "Connection closed.");
+
+    return ESP_OK;
+}
+
+static esp_err_t _accessories_get(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[GET] accessories");
+    return ESP_OK;
+}
+
+static esp_err_t _characteristics_get(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[GET] characteristics");
+    return ESP_OK;
+}
+
+static esp_err_t _characteristics_put(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[PUT] characteristics");
+    return ESP_OK;
+}
+
+static esp_err_t _pairings_get(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[GET] pairings");
+    return ESP_OK;
+}
+
+static esp_err_t _pair_verify_post(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[POST] pair-verify");
+    return ESP_OK;
+}
+
+static esp_err_t _pair_setup_post(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[POST] pair-setup");
+    return ESP_OK;
+}
+
+static esp_err_t _start_server() {
+    // Start the httpd server
+    ESP_LOGI(TAG, "Starting server on port: '%d'", s_config.server_port);
+    esp_err_t ret = httpd_start(&s_server, &s_config);
+    if (ret == ESP_OK) {
+
+        // Set URI handlers
+        ESP_LOGI(TAG, "Registering URI handlers");
+
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/accessories",
+                .method    = HTTP_GET,
+                .handler   = _accessories_get,
+                .user_ctx  = NULL
+        });
+
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/characteristics",
+                .method    = HTTP_GET,
+                .handler   = _characteristics_get,
+                .user_ctx  = NULL
+        });
+
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/characteristics",
+                .method    = HTTP_PUT,
+                .handler   = _characteristics_put,
+                .user_ctx  = NULL
+        });
+
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/pairings",
+                .method    = HTTP_GET,
+                .handler   = _pairings_get,
+                .user_ctx  = NULL
+        });
+
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/pair-verify",
+                .method    = HTTP_POST,
+                .handler   = _pair_verify_post,
+                .user_ctx  = NULL
+        });
+
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/pair-setup",
+                .method    = HTTP_POST,
+                .handler   = _pair_setup_post,
+                .user_ctx  = NULL
+        });
+
+    } else {
+        ESP_LOGE(TAG, "Error starting server!");
+    }
+
+    return ret;
+}
+
+static void _stop_server() {
+    ESP_LOGI(TAG, "Stopping server");
+    httpd_stop(&s_server);
+}
+
+static void _disconnect_handler(void *arg, esp_event_base_t event_base,
+                                int32_t event_id, void *event_data) {
     LWIP_UNUSED_ARG(arg);
+    LWIP_UNUSED_ARG(event_base);
+    LWIP_UNUSED_ARG(event_id);
+    LWIP_UNUSED_ARG(event_data);
 
-    while (s_go) {
-        if (xSemaphoreTake(_httpd_mutex, 1000 / portMAX_DELAY) == pdTRUE) {
-            mg_mgr_poll(&_mgr, 500);
-            xSemaphoreGive(_httpd_mutex);
-        }
-        vTaskDelay(100); // yield to allow semaphore to be taken
-    }
+    _stop_server();
 }
 
-static void mg_ev_handler(struct mg_connection* nc, int ev, void *p, void* user_data) {
-    LWIP_UNUSED_ARG(p);
+static void _connect_handler(void *arg, esp_event_base_t event_base,
+                             int32_t event_id, void *event_data) {
+    LWIP_UNUSED_ARG(arg);
+    LWIP_UNUSED_ARG(event_base);
+    LWIP_UNUSED_ARG(event_id);
+    LWIP_UNUSED_ARG(event_data);
 
-    switch (ev)     {
-        case MG_EV_ACCEPT: {
-            if (_ops.accept) {
-                _ops.accept(user_data, nc);
-            }
-
-            char addr[32];
-            mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
-                                (unsigned)MG_SOCK_STRINGIFY_IP | (unsigned)MG_SOCK_STRINGIFY_PORT);
-            ESP_LOGI(TAG, "Connection %p from %s", nc, addr);
-            break;
-        }
-        case MG_EV_RECV: {
-            ESP_LOGD(TAG, "MG_EV_RECV");
-            if (_ops.recv) {
-                _ops.recv(user_data, nc, nc->recv_mbuf.buf, nc->recv_mbuf.len);
-            }
-            break;
-        }
-        case MG_EV_POLL: {
-            break;
-        }
-        case MG_EV_CLOSE: {
-            ESP_LOGI(TAG, "Connection closed - MG_EV_CLOSE");
-            if (_ops.close) {
-                _ops.close(user_data, nc);
-            }
-            break;
-        }
-        case MG_EV_SEND: {
-            ESP_LOGD(TAG, "MG_EV_SEND. %d", *((int*)user_data));
-            break;
-        }
-        default: {
-            ESP_LOGD(TAG, "DEFAULT:%d", ev);
-            break;
-        }
-    }
+    _start_server();
 }
 
-void* httpd_bind(int port, void* user_data) {
-    if (port <= 0)
-        return NULL;
 
-    ESP_LOGI(TAG, "Binding");
-
-    struct mg_connection* nc = NULL;
-    char port_string[11] = {0,};
-    sprintf(port_string, "%d", port);
-
-    bool taken = xSemaphoreTake(_httpd_mutex, portMAX_DELAY) == pdTRUE;
-    ESP_LOGI(TAG, "Got semaphore");
-
-    nc = mg_bind(&_mgr, port_string, mg_ev_handler, user_data);
-    if (nc == NULL) {
-        ESP_LOGE(TAG, "mg_bind failed]n");
-        goto err_mg_bind;
+esp_err_t httpd_init(int port) {
+    if (s_server != NULL) {
+        ESP_LOGE(TAG, "Already initialised.");
+        return -1;
     }
 
-    mg_set_protocol_http_websocket(nc);
+    s_config.server_port = port;
+    s_config.open_fn = _connection_opened;
+    s_config.close_fn = _connection_closed;
 
-err_mg_bind:
-    if (taken) {
-        xSemaphoreGive(_httpd_mutex);
+    // Register listening on wifi start / stop to keep the server up
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &_connect_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &_disconnect_handler, NULL));
+
+    return _start_server();
+}
+
+void httpd_terminate() {
+    if (s_server == NULL) {
+        ESP_LOGE(TAG, "Not initialised.");
+        return;
     }
-    ESP_LOGI("httpd", "Done.");
-    return nc;
+
+    // Register listening on wifi start / stop to keep the server up
+    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &_connect_handler));
+    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &_disconnect_handler));
+
+    _stop_server();
 }
 
-void httpd_init(struct httpd_ops* ops) {
-    mg_mgr_init(&_mgr, NULL);
-    _httpd_mutex = xSemaphoreCreateMutex();
-    _ops = *ops;
-    xTaskCreate(_httpd_task, "httpd_task", HTTPD_STACK, NULL, 5, NULL);
-}
