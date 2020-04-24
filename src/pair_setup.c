@@ -27,12 +27,6 @@ struct pair_setup {
     } keys;
 };
 
-static const char* header_fmt = 
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Length: %d\r\n"
-    "Content-Type: application/pairing+tlv8\r\n"
-    "\r\n";
-
 static void _dump_hex(uint8_t* data, int len)
 {
 #ifdef DEBUG
@@ -170,7 +164,7 @@ static int _acc_m6_subtlv(uint8_t* srp_key, char* acc_id, uint8_t* acc_ltk_publi
 
     sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_IDENTIFIER, strlen(acc_id), (uint8_t*)acc_id, sub_tlv_write_ptr);
     sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_PUBLICKEY, ED25519_PUBLIC_KEY_LENGTH, acc_ltk_public, sub_tlv_write_ptr);
-    sub_tlv_write_ptr += tlv_encode(HAP_TLV_TYPE_SIGNATURE, ED25519_SIGN_LENGTH, acc_signature, sub_tlv_write_ptr);
+    tlv_encode(HAP_TLV_TYPE_SIGNATURE, ED25519_SIGN_LENGTH, acc_signature, sub_tlv_write_ptr);
 
 #if 0
     printf("ACC PLAIN SUBTLV LEN:%d\n", acc_plain_subtlv_length);
@@ -347,13 +341,12 @@ static int _setup_m2(struct pair_setup* ps,
     uint8_t* tlv_encode_ptr = *acc_msg;
     tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_SALT, SRP_SALT_LENGTH, salt, tlv_encode_ptr);
     tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_PUBLICKEY, SRP_PUBLIC_KEY_LENGTH, host_public_key, tlv_encode_ptr);
-    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_STATE, sizeof(state), state, tlv_encode_ptr);
+    tlv_encode(HAP_TLV_TYPE_STATE, sizeof(state), state, tlv_encode_ptr);
 
     return 0;
 }
 
-int pair_setup_do(void* _ps, char* req_body, int req_body_len, 
-        char** res_header, int* res_header_len, char** res_body, int* res_body_len)
+int pair_setup_do(void* _ps, char* req_body, int req_body_len, char** res_body, int* res_body_len)
 {
     struct pair_setup* ps = _ps;
 
@@ -379,10 +372,6 @@ int pair_setup_do(void* _ps, char* req_body, int req_body_len,
     if (error) {
         return -1;
     }
-
-    *res_header = malloc(strlen(header_fmt) + 16);
-    sprintf(*res_header, header_fmt, *res_body_len);
-    *res_header_len = strlen(*res_header);
 
     return 0;
 }

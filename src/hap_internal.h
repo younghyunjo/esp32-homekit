@@ -50,9 +50,8 @@ struct hap_accessory {
 struct hap_connection {
     bool pair_verified;
 
-    struct mg_connection* nc;
     struct hap_accessory *a;
-    struct list_head list;
+    //struct list_head list;
     char session_key[CURVE25519_SECRET_LENGTH];
     uint8_t encrypt_key[HKDF_KEY_LEN];
     uint8_t decrypt_key[HKDF_KEY_LEN];

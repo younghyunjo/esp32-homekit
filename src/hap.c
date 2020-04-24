@@ -24,12 +24,7 @@
 
 #define TAG "HAP"
 
-struct hap {
-    int nr_accessory;
-    SemaphoreHandle_t mutex;
-};
-
-static struct hap* _hap_desc;
+static bool s_registered = false;
 
 static void _plain_msg_recv(void* connection, httpd_req_t* nc, char* msg, int len);
 
@@ -294,10 +289,6 @@ static void _hap_connection_close(void* connection, struct httpd_req_t* nc)
     if (hc->pair_verify)
         pair_verify_cleanup(hc->pair_verify);
 
-    xSemaphoreTake(_hap_desc->mutex, portMAX_DELAY);
-    list_del(&hc->list);
-    xSemaphoreGive(_hap_desc->mutex);
-
     ESP_LOGI(TAG, "Resources freed for connection");
 
     free(hc);
@@ -308,7 +299,6 @@ static void _hap_connection_accept(void* accessory, httpd_req_t* nc)
     struct hap_accessory* a = accessory;
     struct hap_connection* hc = calloc(1, sizeof(struct hap_connection));
 
-    hc->nc = nc;
     hc->a = a;
     hc->pair_verified = false;
 
@@ -316,9 +306,6 @@ static void _hap_connection_accept(void* accessory, httpd_req_t* nc)
     //INIT_LIST_HEAD(&hc->event_head);
     //WILLC nc->user_data = hc;
 
-    xSemaphoreTake(_hap_desc->mutex, portMAX_DELAY);
-    list_add(&hc->list, &a->connections);
-    xSemaphoreGive(_hap_desc->mutex);
 }
 
 static void _accessory_ltk_load(struct hap_accessory* a) 
@@ -367,11 +354,10 @@ int hap_event_response(void* acc_instance, void* ev_handle, void* value)
     struct hap_accessory* a = acc_instance;
     struct hap_connection* hc;
 
-    xSemaphoreTake(_hap_desc->mutex, portMAX_DELAY);
-    list_for_each_entry(hc, &a->connections, list) {
-        encrypt_send(hc->nc, hc, res_header, res_header_len, res_body, body_len);
-    }
-    xSemaphoreGive(_hap_desc->mutex);
+    // WILLC thread safety required
+//    list_for_each_entry(hc, &a->connections, list) {
+//        encrypt_send(hc->nc, hc, res_header, res_header_len, res_body, body_len);
+//    }
 
     ESP_LOGI(TAG, "%.*s", res_header_len, res_header);
     ESP_LOGI(TAG, "%.*s", body_len, res_body);
@@ -398,40 +384,40 @@ void hap_service_and_characteristics_add(void* acc_instance, void* acc_obj,
 void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,
                         int port, uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback)
 {
-    if (_hap_desc->nr_accessory != 0) {
+    if (s_registered) {
+        ESP_LOGE(TAG, "Accessory already registered, bailing out");
         return NULL;
     }
 
-    struct hap_accessory* a = calloc(1, sizeof(struct hap_accessory));
-    if (a == NULL) {
+
+    struct hap_accessory* accessory = calloc(1, sizeof(struct hap_accessory));
+    if (accessory == NULL) {
         ESP_LOGE(TAG, "calloc failed. size: %d", (int)sizeof(struct hap_accessory));
         return NULL;
     }
 
-    a->name = strdup(name);
-    strcpy(a->id, id);
-    strcpy(a->pincode, pincode);
-    a->vendor = strdup(vendor);
-    a->category = category;
-    a->port = port;
-    a->config_number = config_number;
-    a->callback = *callback;
-    a->callback_arg = callback_arg;
+    accessory->name = strdup(name);
+    strcpy(accessory->id, id);
+    strcpy(accessory->pincode, pincode);
+    accessory->vendor = strdup(vendor);
+    accessory->category = category;
+    accessory->port = port;
+    accessory->config_number = config_number;
+    accessory->callback = *callback;
+    accessory->callback_arg = callback_arg;
 
-    INIT_LIST_HEAD(&a->connections);
-    INIT_LIST_HEAD(&a->attr_accessories);
+    INIT_LIST_HEAD(&accessory->connections);
+    INIT_LIST_HEAD(&accessory->attr_accessories);
 
-    httpd_init(port);
+    httpd_init(accessory);
 
-    _accessory_ltk_load(a);
-    a->iosdevices = iosdevice_pairings_init(a->id);
-    a->advertise = advertise_accessory_add(a->name, a->id, a->vendor, a->port, a->config_number, a->category,
+    _accessory_ltk_load(accessory);
+    accessory->iosdevices = iosdevice_pairings_init(accessory->id);
+    accessory->advertise = advertise_accessory_add(accessory->name, accessory->id, accessory->vendor, accessory->port, accessory->config_number, accessory->category,
                                            ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
-    //WILLC a->bind = httpd_bind(port, a);
-    _hap_desc->nr_accessory = 1;
-    ESP_LOGI(TAG, "HAP registered");
 
-    return a;
+    ESP_LOGI(TAG, "HAP registered");
+    return accessory;
 }
 
 void hap_accessory_remove(void* acc_instance) {
@@ -443,29 +429,6 @@ void hap_accessory_remove(void* acc_instance) {
     free(a->name);
     free(a->vendor);
     free(a);
-}
-
-void hap_init()
-{
-    if (_hap_desc)
-        return;
-
-    _hap_desc = calloc(1, sizeof(struct hap));
-    if (_hap_desc == NULL)
-        return;
-
-    vSemaphoreCreateBinary(_hap_desc->mutex);
-
-    //WILLC
-    /*
-    struct httpd_ops httpd_ops = {
-        .accept = _hap_connection_accept,
-        .close = _hap_connection_close,
-        .recv = _msg_recv,
-    };
-
-    httpd_init(&httpd_ops);
-     */
 }
 
 void hap_advertise(void* handle){

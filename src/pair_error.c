@@ -25,11 +25,6 @@ int pair_error(enum hap_tlv_error_codes error_codes,
     uint8_t* tlv_encode_ptr = *acc_msg;
     tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_ERROR, sizeof(error), error, tlv_encode_ptr);
 
-    return 0;
+    return -2;
 }
 
-void pair_error_free(uint8_t* error_msg)
-{
-    if (error_msg)
-        free(error_msg);
-}
