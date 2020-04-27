@@ -75,8 +75,7 @@ static void _encrypted_msg_recv(void* connection, struct httpd_req_t* nc, char* 
     uint8_t* saveptr = NULL;
     int decrypted_len = 0;
 
-    for (decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr); decrypted_len; 
-         decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr)) {
+    for (decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr); decrypted_len;  decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr)) {
         _plain_msg_recv(connection, nc, decrypted, decrypted_len);
     }
 
@@ -409,14 +408,16 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
     INIT_LIST_HEAD(&accessory->connections);
     INIT_LIST_HEAD(&accessory->attr_accessories);
 
-    httpd_init(accessory);
-
     _accessory_ltk_load(accessory);
     accessory->iosdevices = iosdevice_pairings_init(accessory->id);
-    accessory->advertise = advertise_accessory_add(accessory->name, accessory->id, accessory->vendor, accessory->port, accessory->config_number, accessory->category,
-                                           ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
+    accessory->advertise = advertise_accessory_add(accessory->name, accessory->id,
+            accessory->vendor, accessory->port, accessory->config_number, accessory->category,
+            ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
+
+    httpd_init(accessory);
 
     ESP_LOGI(TAG, "HAP registered");
+    s_registered = true;
     return accessory;
 }
 

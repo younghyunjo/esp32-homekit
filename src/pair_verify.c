@@ -181,44 +181,30 @@ static int _verify_m4(struct pair_verify* pv,
     }
 
     uint8_t* tlv_encode_ptr = *acc_msg;
-    tlv_encode_ptr += tlv_encode(HAP_TLV_TYPE_STATE, sizeof(state), state, tlv_encode_ptr);
+    tlv_encode(HAP_TLV_TYPE_STATE, sizeof(state), state, tlv_encode_ptr);
 
     return 0;
 }
 
-int pair_verify_do(void* _pv, const char* req_body, int req_body_len, 
-        char** res_body, int* res_body_len,
+int pair_verify_do(void* _pv, const char* req_body, int req_body_len, char** res_body, int* res_body_len,
         char* session_key)
 {
     struct pair_verify* pv = _pv;
+
     uint8_t state = _state_get((uint8_t*)req_body, req_body_len);
-
-    int verify_state = 0;
-
     switch (state) {
-    case 0x01:
-        printf("verify 1\n");
-        verify_state = _verify_m2(pv, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len);
-        break;
-    case 0x03:
-        printf("verify 2\n");
-        verify_state = _verify_m4(pv, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len);
-        if (verify_state == 0) {
-            printf("verify 2 is good\n");
-            verify_state = 1;
-            memcpy(session_key, pv->session_key, CURVE25519_SECRET_LENGTH);
-        }
-        break;
-    default:
-        printf("[PAIR-VERIFY][ERR] Invalid state number. %d\n", state);
-        return -1;
+        case 0x01:
+            return _verify_m2(pv, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len);
+        case 0x03:
+            if (_verify_m4(pv, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len) == 0) {
+                memcpy(session_key, pv->session_key, CURVE25519_SECRET_LENGTH);
+                return 1;
+            }
+            return -1;
+        default:
+            printf("[PAIR-VERIFY][ERR] Invalid state number. %d\n", state);
+            return -2;
     }
-
-    if (verify_state) {
-        return -1;
-    }
-
-    return verify_state;
 }
 
 void* pair_verify_init(char* acc_id, void* iosdevices, uint8_t* public_key, uint8_t* private_key)

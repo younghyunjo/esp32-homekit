@@ -29,7 +29,7 @@ void hap_acc_event_response(struct hap_event* ev, void* value,
  * @return
  */
 int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len,
-        char** res_header, int* res_header_len, char** res_body, int* res_body_len);
+         char** res_body, int* res_body_len);
 
 /**
  *
@@ -43,8 +43,8 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len,
  * @param res_body_len Must be freed upon making this call.
  * @return
  */
-int hap_acc_characteristic_put(struct hap_accessory* a, void* ev_handle, char* req_body,
-        int req_body_len, char** res_header, int* res_header_len, char** res_body, int* res_body_len);
+int hap_acc_characteristic_put(struct hap_accessory* a, char* req_body,
+        int req_body_len, char** res_body, int* res_body_len);
 
 /**
  *
@@ -55,8 +55,7 @@ int hap_acc_characteristic_put(struct hap_accessory* a, void* ev_handle, char* r
  * @param res_body_len Must be freed upon making this call.
  * @return
  */
-int hap_acc_accessories_do(struct hap_accessory* a, char** res_header,
-        int* res_header_len, char** res_body, int* res_body_len);
+int hap_acc_accessories_do(struct hap_accessory* a, char** res_body, int* res_body_len);
 
 void* hap_acc_accessory_add(void* acc_instance);
 

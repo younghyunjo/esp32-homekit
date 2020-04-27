@@ -73,19 +73,6 @@ struct hap_attr_characteristic {
 };
 
 
-static const char* header_204_fmt = 
-    "HTTP/1.1 204 No Content\r\n"
-    "Connection: keep-alive\r\n"
-    //"Content-type: application/hap+json\r\n"
-    "\r\n";
-
-static const char* header_200_fmt = 
-    "HTTP/1.1 200 OK\r\n"
-    "Connection: Keep-Alive\r\n"
-    "Content-Type: application/hap+json\r\n"
-    "Content-Length: %d\r\n"
-    "\r\n";
-
 static const char* header_event_200_fmt =
     "Connection: keep-alive\r\n"
     "EVENT/1.0 200 OK\r\n"
@@ -282,47 +269,49 @@ static cJSON* _characteristic_read(struct hap_attr_characteristic* c)
     return _characteristic_value_to_json(c, value);
 }
 
-int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
+int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, char** res_body, int* res_body_len)
 {
+    int ret = ESP_OK;
     int aid = 0, iid = 0;
 
     cJSON* root = cJSON_CreateObject();
     cJSON* characteristics = cJSON_CreateArray();
     cJSON_AddItemToObject(root, "characteristics", characteristics);
 
-    if (query == NULL || len ==0  || EOF == sscanf(query, "id=%d.%d", &aid, &iid)) {
+    if (query == NULL || len ==0) {
         ESP_LOGE(TAG, "Missing query parameter 'id'");
-        goto done;
+        ret = ESP_FAIL;
+        goto error;
     }
 
-    struct hap_attr_characteristic* c = _attr_character_find(&a->attr_accessories, aid, iid);
-    if (c != NULL) {
-        cJSON* char_json = _characteristic_read(c);
-        cJSON_AddItemToArray(characteristics, char_json);
-    }
-
-    int nr_skip = 6;
-    if (aid / 10)
-        nr_skip++;
-    if (iid / 10)
-        nr_skip++;
-
-    query += nr_skip;
-    len -= nr_skip;
-
+    bool first = true;
     while (len > 0) {
-        if (EOF == sscanf(query, ",%d.%d", &aid, &iid)) {
-            ESP_LOGE(TAG, "'id' parameter list is incorrectly formatted");
-            goto done;
+        int nr_skip;
+        int parse_result;
+
+        if (first) {
+            parse_result = sscanf(query, "id=%d.%d", &aid, &iid);
+            first = false;
+            nr_skip = 6;
+        } else {
+            parse_result = sscanf(query, ",%d.%d", &aid, &iid);
+            nr_skip = 4;
         }
 
-        c = _attr_character_find(&a->attr_accessories, aid, iid);
+        // Ok, parse
+        if (EOF == parse_result) {
+            ESP_LOGE(TAG, "'id' parameter list is incorrectly formatted");
+            ret = ESP_FAIL;
+            goto error;
+        }
+
+        ESP_LOGD(TAG, "Parsed aid=%d, iid=%d", aid, iid);
+        struct hap_attr_characteristic* c = _attr_character_find(&a->attr_accessories, aid, iid);
         if (c != NULL) {
             cJSON* char_json = _characteristic_read(c);
             cJSON_AddItemToArray(characteristics, char_json);
         }
 
-        nr_skip = 4;
         if (aid / 10)
             nr_skip++;
         if (iid / 10)
@@ -332,22 +321,17 @@ int hap_acc_characteristic_get(struct hap_accessory* a, char* query, int len, ch
         len -= nr_skip;
     }
 
-
-done:
     *res_body = cJSON_PrintUnformatted(root);
     ESP_LOGD(TAG, "Sending JSON payload %s", *res_body);
     *res_body_len = strlen(*res_body);
+
+    error:
     cJSON_Delete(root);
-
-    *res_header = calloc(1, strlen(header_200_fmt) + 16);
-    sprintf(*res_header, header_200_fmt, *res_body_len);
-    *res_header_len = strlen(*res_header);
-
-    return 0;
+    return ret;
 }
 
 
-int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* hc, char* req_body, int req_body_len, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
+int hap_acc_characteristic_put(struct hap_accessory* a, char* req_body, int req_body_len, char** res_body, int* res_body_len)
 {
     cJSON* root = cJSON_Parse(req_body);
     if (!cJSON_IsObject(root)) {
@@ -399,9 +383,6 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
         }
     }
 
-    *res_header = calloc(1, strlen(header_204_fmt) + 1);
-    strcpy(*res_header, header_204_fmt);
-    *res_header_len = strlen(*res_header);
     cJSON_Delete(root);
 
     *res_body = NULL;
@@ -410,7 +391,7 @@ int hap_acc_characteristic_put(struct hap_accessory* a, struct hap_connection* h
     return 0;
 }
 
-int hap_acc_accessories_do(struct hap_accessory* a, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
+int hap_acc_accessories_do(struct hap_accessory* a, char** res_body, int* res_body_len)
 {
     if (list_empty(&a->attr_accessories)) {
         a->callback.hap_object_init(a->callback_arg);
@@ -421,10 +402,6 @@ int hap_acc_accessories_do(struct hap_accessory* a, char** res_header, int* res_
     ESP_LOGD(TAG, "Sending JSON payload %s", *res_body);
     *res_body_len = strlen(*res_body);
     cJSON_Delete(attr_accessories_json);
-
-    *res_header = calloc(1, strlen(header_200_fmt) + 16);
-    sprintf(*res_header, header_200_fmt, *res_body_len);
-    *res_header_len = strlen(*res_header);
 
     return 0;
 }
