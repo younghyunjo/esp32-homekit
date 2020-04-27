@@ -22,8 +22,6 @@
 
 //#define DEBUG
 
-#define TAG "HAP"
-
 static bool s_registered = false;
 
 static void _plain_msg_recv(void* connection, httpd_req_t* nc, char* msg, int len);

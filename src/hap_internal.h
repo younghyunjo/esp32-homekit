@@ -17,6 +17,7 @@ extern "C" {
 
 #define UNUSED_ARG(x) (void)x
 
+#define TAG "HAP"
 
 struct events {
     struct list_head list;

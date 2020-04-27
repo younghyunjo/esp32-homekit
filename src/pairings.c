@@ -2,17 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <esp_log.h>
 
 #include "hap_internal.h"
 #include "iosdevice.h"
 #include "pair_error.h"
 #include "tlv.h"
 
-static const char* header_fmt = 
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Length: %d\r\n"
-    "Content-Type: application/pairing+tlv8\r\n"
-    "\r\n";
+#define TAG "hap"
 
 static uint8_t _state_get(uint8_t* device_msg, int device_msg_length)
 {
@@ -108,13 +105,8 @@ static int _remove(void* iosdevices, uint8_t* device_msg, int device_msg_length,
         printf("tlv_decode failed. type:%d\n", HAP_TLV_TYPE_IDENTIFIER);
         return -1;
     }
-    printf("%.*s\n",remove_identifier->length , ((uint8_t*)&remove_identifier->value));
+    ESP_LOGI(TAG, "Removing %.*s\n",remove_identifier->length , ((uint8_t*)&remove_identifier->value));
     iosdevice_pairings_remove(iosdevices, (char*)&remove_identifier->value);
-#if 0
-    for (int i=0; i<remove_identifier->length; i++) {
-        printf("%X ", ((uint8_t*)&remove_identifier->value)[i]);
-    }
-#endif
 
     uint8_t state[] = {2};
     *acc_msg_length = tlv_encode_length(sizeof(state));
@@ -131,8 +123,7 @@ static int _remove(void* iosdevices, uint8_t* device_msg, int device_msg_length,
     return 0;
 }
 
-int pairings_do(void* iosdevices, char* req_body, int req_body_len, 
-        char** res_header, int* res_header_len, char** res_body, int* res_body_len)
+int pairings_do(void* iosdevices, char* req_body, int req_body_len,  char** res_body, int* res_body_len)
 {
     uint8_t state = _state_get((uint8_t*)req_body, req_body_len);
     enum hap_pairing_method method = _method_get((uint8_t*)req_body, req_body_len);
@@ -140,25 +131,20 @@ int pairings_do(void* iosdevices, char* req_body, int req_body_len,
     printf("[PAIRINGS] STATE:%d METHOD:%d\n", state, method);
 
     if (method == HAP_PAIRING_METHOD_ADD) {
+        ESP_LOGI(TAG, "Adding pairing");
         _add(iosdevices, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len);
-        *res_header = malloc(strlen(header_fmt) + 16);
-        sprintf(*res_header, header_fmt, *res_body_len);
-        *res_header_len = strlen(*res_header);
     }
     else if (method == HAP_PAIRING_METHOD_REMOVE) {
+        ESP_LOGI(TAG, "Removing pairing");
         _remove(iosdevices, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len);
-        *res_header = malloc(strlen(header_fmt) + 16);
-        sprintf(*res_header, header_fmt, *res_body_len);
-        *res_header_len = strlen(*res_header);
+    } else if (method == HAP_PAIRING_METHOD_LIST) {
+        ESP_LOGW(TAG, "Listing pairing not implemented");
+        // List not implemented yet
+        //_list(iosdevices, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len);
+    } else {
+        ESP_LOGW(TAG, "Pairing method %d not implemented", method);
+
     }
-    /*
-    else if (method == HAP_PAIRING_METHOD_LIST) {
-        _list(iosdevices, (uint8_t*)req_body, req_body_len, (uint8_t**)res_body, res_body_len);
-        *res_header = malloc(strlen(header_fmt) + 16);
-        sprintf(*res_header, header_fmt, *res_body_len);
-        *res_header_len = strlen(*res_header);
-    }
-    */
 
     return 0;
 }

@@ -2,10 +2,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <esp_log.h>
 
 #include "ed25519.h"
 #include "iosdevice.h"
 #include "nvs.h"
+#include "hap_internal.h"
 
 #define ACCESSORY_ID_COMPACT_LEN    12
 struct iosdevice_pairings {
@@ -39,6 +41,8 @@ static int _pairing_match_with_id(void* handle, char id[])
 {
     struct iosdevice_pairings *ipairings = (struct iosdevice_pairings*)handle;
     for (int i=0; i<IOSDEVICE_PER_ACCESSORY_MAX; i++) {
+        ESP_LOGI(TAG, "Compare slot %d %.*s to %.*s", ipairings->iosdevices[i].slot, IOSDEVICE_ID_LEN, ipairings->iosdevices[i].id, IOSDEVICE_ID_LEN, id);
+
         if (ipairings->iosdevices[i].slot == -1)
             continue;
         if (memcmp(ipairings->iosdevices[i].id, id, IOSDEVICE_ID_LEN) != 0)
@@ -149,9 +153,9 @@ void* iosdevice_pairings_init(char accessory_id[])
 
     for (int i=0; i<IOSDEVICE_PER_ACCESSORY_MAX; i++) {
         memset(nvs_key, 0, sizeof(nvs_key));
-        memset(nvs_key, 0, sizeof(nvs_key));
         memset(value, 0, sizeof(value));
         sprintf(nvs_key, "%sD%d", ipairings->id, i);
+
         //nvs_erase(nvs_key);
         if (nvs_get(nvs_key, value, IOSDEVICE_ID_LEN + ED25519_PUBLIC_KEY_LENGTH) == 0) {
             ipairings->iosdevices[i].slot = -1;
@@ -162,8 +166,9 @@ void* iosdevice_pairings_init(char accessory_id[])
         ipairings->iosdevices[i].slot = i;
 
         memcpy(ipairings->iosdevices[i].id, value, IOSDEVICE_ID_LEN);
-        printf("[IOSDEVICE] ID:%.*s\n", IOSDEVICE_ID_LEN, ipairings->iosdevices[i].id);
         memcpy(ipairings->iosdevices[i].key, value+IOSDEVICE_ID_LEN, ED25519_PUBLIC_KEY_LENGTH);
+
+        ESP_LOGI(TAG, "Loaded pairing for device ID:%.*s", IOSDEVICE_ID_LEN, ipairings->iosdevices[i].id);
     }
 
     return ipairings;

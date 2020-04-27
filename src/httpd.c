@@ -3,6 +3,7 @@
 #include "pair_setup.h"
 #include "chacha20_poly1305.h"
 #include "accessories.h"
+#include "pairings.h"
 
 #include <esp_wifi.h>
 #include <esp_event.h>
@@ -14,13 +15,8 @@
 #include <sys/socket.h>
 #include <search.h>
 
-#define TAG "httpd"
 
-#define MAX_RX_LEN 1024
-#define MAX_ENCRYPTED_PAYLOAD_LEN 2048
-
-
-static char* s_rx_buffer;
+#define MAX_RX_LENGTH 2048
 
 static httpd_config_t s_config = HTTPD_DEFAULT_CONFIG();
 static httpd_handle_t s_server = NULL;
@@ -71,6 +67,39 @@ struct connection_entry_t *_get_entry(int sock_fd) {
     key.sock_fd = sock_fd;
     struct connection_entry_t *entry = *(struct connection_entry_t **) tfind(&key, &s_connections, _compare);
     return entry;
+}
+
+static void _free_decrypt(struct connection_entry_t *entry) {
+    free(entry->rx_decrypted_buffer);
+    entry->rx_decrypted_buffer = NULL;
+    entry->rx_decrypted_buffer_len = 0;
+    entry->rx_decrypted_read_count = 0;
+}
+
+/**
+ * Frees resources associated with a given connection.
+ */
+esp_err_t _free_entry(struct connection_entry_t *entry) {
+    if (entry) {
+        if (entry->connection) {
+            if (entry->connection->pair_verify) {
+                free(entry->connection->pair_verify);
+            }
+
+            if (entry->connection->pair_setup) {
+                free(entry->connection->pair_setup);
+            }
+
+            _free_decrypt(entry);
+            free(entry->connection);
+        }
+
+        ESP_LOGI(TAG, "Connection entry deleted for %d", entry->sock_fd);
+        free(entry);
+        return ESP_OK;
+    } else {
+        return ESP_ERR_NOT_FOUND;
+    }
 }
 
 
@@ -124,7 +153,7 @@ static esp_err_t _characteristics_get(httpd_req_t *req) {
     if (params_len > 0) {
         char* params = malloc(params_len);
         httpd_req_get_url_query_str(req, params, params_len+1);
-        ESP_LOGI(TAG, "[GET] characteristics params: %.*s, len=%d", params_len, params, params_len-1);
+        ESP_LOGD(TAG, "[GET] characteristics params: %.*s, len=%d", params_len, params, params_len-1);
 
         char* res_body = NULL;
         int body_len = 0;
@@ -147,22 +176,71 @@ static esp_err_t _characteristics_get(httpd_req_t *req) {
 static esp_err_t _characteristics_put(httpd_req_t *req) {
     ESP_LOGI(TAG, "[PUT] characteristics");
 
+    int ret = ESP_OK;
     char* res_body = NULL;
+    char* buffer = NULL;
     int body_len = 0;
 
-    int len =  _recv_body(req, req->content_len, s_rx_buffer, MAX_RX_LEN);
+    if (req->content_len > MAX_RX_LENGTH) {
+        ESP_LOGE(TAG, "Incoming body content length too long: %d", req->content_len);
+        ret = httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        goto done;
+    }
+
+    buffer = calloc(1, req->content_len);
+    if (!buffer) {
+        ESP_LOGE(TAG, "No memory");
+        ret = httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, NULL);
+        goto done;
+    }
+
+    int len = _recv_body(req, req->content_len, buffer, req->content_len);
     if (len > 0) {
-        hap_acc_characteristic_put(s_accessory, s_rx_buffer, len, &res_body, &body_len);
+        hap_acc_characteristic_put(s_accessory, buffer, len, &res_body, &body_len);
 
         httpd_resp_set_status(req, "204");
         httpd_resp_send(req, res_body, body_len);
     } else {
         ESP_LOGE(TAG, "[PUT] characteristics: Received body length invalid len=%d", len);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        ret = httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
     }
 
+    done:
+    free(buffer);
     free(res_body);
-    return ESP_OK;
+    return ret;
+}
+
+static esp_err_t _pairings_put(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[PUT] pairings");
+
+    int ret = ESP_OK;
+    char* res_body = NULL;
+    char* buffer = NULL;
+    int body_len = 0;
+
+    buffer = calloc(1, req->content_len);
+    if (!buffer) {
+        ESP_LOGE(TAG, "No memory");
+        ret = httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, NULL);
+        goto done;
+    }
+
+    int len = _recv_body(req, req->content_len, buffer, req->content_len);
+    if (len > 0) {
+        pairings_do(s_accessory->iosdevices, buffer, len, &res_body, &body_len);
+
+        httpd_resp_set_type(req, "application/pairing+tlv8");
+        httpd_resp_send(req, res_body, body_len);
+    } else {
+        ESP_LOGE(TAG, "[PUT] characteristics: Received body length invalid len=%d", len);
+        ret = httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+    }
+
+    done:
+    free(buffer);
+    free(res_body);
+    return ret;
 }
 
 
@@ -172,10 +250,15 @@ static esp_err_t _pair_verify_post(httpd_req_t *req) {
     // Get connection, die hard if if pointer is not valid, it would be a programming error.
     struct hap_connection *ctx = _get_entry(httpd_req_to_sockfd(req))->connection;
 
+    int ret = ESP_OK;
+    char* res_body = NULL;
+    char* buffer = NULL;
+    int body_len = 0;
+
     if (ctx->pair_verified) {
         ESP_LOGW(TAG, "Already verified");
-        httpd_resp_send_500(req);
-        return ESP_OK;
+        ret = httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        goto done;
     } else if (ctx->pair_verify == NULL) {
         ESP_LOGI(TAG, "Initiating verification");
         // Then we must have a valid verify instance
@@ -184,10 +267,21 @@ static esp_err_t _pair_verify_post(httpd_req_t *req) {
                 s_accessory->keys.public, s_accessory->keys.private);
     }
 
-    char* res_body = NULL;
-    int body_len = 0;
-    int len =  _recv_body(req, req->content_len, s_rx_buffer, MAX_RX_LEN);
-    int verify_status = pair_verify_do(ctx->pair_verify, s_rx_buffer, len, &res_body, &body_len, ctx->session_key);
+    buffer = calloc(1, req->content_len);
+    if (!buffer) {
+        ESP_LOGE(TAG, "No memory");
+        ret = httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, NULL);
+        goto done;
+    }
+
+    int len =  _recv_body(req, req->content_len, buffer, req->content_len);
+    if (len <= 0) {
+        ESP_LOGE(TAG, "Received bad length %d", len);
+        ret = httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        goto done;
+    }
+
+    int verify_status = pair_verify_do(ctx->pair_verify, buffer, len, &res_body, &body_len, ctx->session_key);
 
     if (verify_status == 1) {
         ESP_LOGI(TAG, "Connection verified.");
@@ -210,12 +304,19 @@ static esp_err_t _pair_verify_post(httpd_req_t *req) {
     // Set verified flag after reply is sent
     ctx->pair_verified = (verify_status == 1);
 
+    done:
+    free(buffer);
     free(res_body);
-    return ESP_OK;
+    return ret;
 }
 
 static esp_err_t _pair_setup_post(httpd_req_t *req) {
     ESP_LOGI(TAG, "[POST] pair-setup");
+
+    int ret = ESP_OK;
+    char* res_body = NULL;
+    char* buffer = NULL;
+    int body_len = 0;
 
     // Get connection, die hard if if pointer is not valid, it would be a programming error.
     struct hap_connection *ctx = _get_entry(httpd_req_to_sockfd(req))->connection;
@@ -226,16 +327,28 @@ static esp_err_t _pair_setup_post(httpd_req_t *req) {
                 s_accessory->iosdevices, s_accessory->keys.public, s_accessory->keys.private);
     }
 
-    char* res_body = NULL;
-    int body_len = 0;
-    int len =  _recv_body(req, req->content_len, s_rx_buffer, MAX_RX_LEN);
-    pair_setup_do(ctx->pair_setup, s_rx_buffer, len, &res_body, &body_len);
+    buffer = calloc(1, req->content_len);
+    if (!buffer) {
+        ESP_LOGE(TAG, "No memory");
+        ret = httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, NULL);
+        goto done;
+    }
 
+    int len =  _recv_body(req, req->content_len, buffer, req->content_len);
+    if (len <= 0) {
+        ESP_LOGE(TAG, "Received bad length %d", len);
+        ret = httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        goto done;
+    }
+
+    pair_setup_do(ctx->pair_setup, buffer, len, &res_body, &body_len);
     httpd_resp_set_type(req, "application/pairing+tlv8");
     httpd_resp_send(req, res_body, body_len);
 
+    done:
+    free(buffer);
     free(res_body);
-    return ESP_OK;
+    return ret;
 }
 
 static esp_err_t _start_server() {
@@ -265,6 +378,13 @@ static esp_err_t _start_server() {
                 .uri       = "/characteristics",
                 .method    = HTTP_PUT,
                 .handler   = _characteristics_put,
+                .user_ctx  = NULL
+        });
+
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/pairings",
+                .method    = HTTP_POST,
+                .handler   = _pairings_put,
                 .user_ctx  = NULL
         });
 
@@ -318,25 +438,26 @@ static int _httpd_sock_err(const char *ctx, int sock_fd)
 {
     UNUSED_ARG(sock_fd);
 
-    int errval;
+    int error_val;
     ESP_LOGW(TAG, "Error in %s : %d", ctx, errno);
 
     switch(errno) {
         case EAGAIN:
         case EINTR:
-            errval = HTTPD_SOCK_ERR_TIMEOUT;
+            error_val = HTTPD_SOCK_ERR_TIMEOUT;
             break;
         case EINVAL:
         case EBADF:
         case EFAULT:
         case ENOTSOCK:
-            errval = HTTPD_SOCK_ERR_INVALID;
+            error_val = HTTPD_SOCK_ERR_INVALID;
             break;
         default:
-            errval = HTTPD_SOCK_ERR_FAIL;
+            error_val = HTTPD_SOCK_ERR_FAIL;
     }
-    return errval;
+    return error_val;
 }
+
 
 static int _handle_decrypt(struct connection_entry_t* entry, int sock_fd, char *buf, size_t buf_len, int flags){
     uint8_t* encrypted_buffer = NULL;
@@ -346,14 +467,17 @@ static int _handle_decrypt(struct connection_entry_t* entry, int sock_fd, char *
         // This is the start of a new block, read the length of the cleartext payload size, post decrypt
         uint8_t aad_buf[2] = {0};
         ret = recv(sock_fd, aad_buf, 2, flags);
-        if (ret != 2) {
+        if (ret == 0) {
+            // Short read, this can happen, let it through.
+            goto error;
+        } else if (ret != 2) {
             ESP_LOGE(TAG, "Failed to receive decrypted payload size, err: %d", ret);
             ret = HTTPD_SOCK_ERR_FAIL;
             goto error;
         }
 
         int encrypted_frame_length = aad_buf[1] * 256 + aad_buf[0] + CHACHA20_POLY1305_AUTH_TAG_LENGTH;
-        if (encrypted_frame_length > MAX_ENCRYPTED_PAYLOAD_LEN) {
+        if (encrypted_frame_length > MAX_RX_LENGTH) {
             ESP_LOGE(TAG, "Cannot decrypt payload, too big: %d", encrypted_frame_length);
             ret = HTTPD_SOCK_ERR_FAIL;
             goto error;
@@ -365,7 +489,7 @@ static int _handle_decrypt(struct connection_entry_t* entry, int sock_fd, char *
         }
 
 
-        ESP_LOGI(TAG, "Starting decrypt of size %d", encrypted_frame_length);
+        ESP_LOGD(TAG, "Starting decrypt of size %d", encrypted_frame_length);
         // Allocate encrypted buffer then
         encrypted_buffer = calloc(1, encrypted_frame_length);
         if (!encrypted_buffer) {
@@ -406,6 +530,8 @@ static int _handle_decrypt(struct connection_entry_t* entry, int sock_fd, char *
             ret = HTTPD_SOCK_ERR_FAIL;
             goto error;
         }
+
+        free(encrypted_buffer);
     }
 
     // Send decrypted buffer to be consumed until done
@@ -414,24 +540,18 @@ static int _handle_decrypt(struct connection_entry_t* entry, int sock_fd, char *
     entry->rx_decrypted_read_count += read_count;
     if (entry->rx_decrypted_read_count == entry->rx_decrypted_buffer_len) {
         // We are done
-        ESP_LOGW(TAG, "Read full frame of decrypted data: '%.*s'",
+        ESP_LOGD(TAG, "Read full frame of decrypted data: '%.*s'",
                 entry->rx_decrypted_read_count, entry->rx_decrypted_buffer);
 
-        free(entry->rx_decrypted_buffer);
-        entry->rx_decrypted_buffer = NULL;
-        entry->rx_decrypted_buffer_len = 0;
-        entry->rx_decrypted_read_count = 0;
-        ESP_LOGI(TAG, "Decrypt completed.");
+        _free_decrypt(entry);
+        ESP_LOGD(TAG, "Decrypt completed.");
     }
 
     return read_count;
 
     error:
     free(encrypted_buffer);
-    free(entry->rx_decrypted_buffer);
-    entry->rx_decrypted_buffer = NULL;
-    entry->rx_decrypted_buffer_len = 0;
-    entry->rx_decrypted_read_count = 0;
+    _free_decrypt(entry);
     return ret;
 }
 
@@ -550,30 +670,6 @@ int _send(httpd_handle_t hd, int sock_fd, const char *buf, size_t buf_len, int f
     return ret;
 }
 
-/**
- * Frees resources associated with a given connection.
- */
-esp_err_t _free_entry(struct connection_entry_t *entry) {
-    if (entry) {
-        if (entry->connection) {
-            if (entry->connection->pair_verify) {
-                free(entry->connection->pair_verify);
-            }
-
-            if (entry->connection->pair_setup) {
-                free(entry->connection->pair_setup);
-            }
-
-            free(entry->connection);
-        }
-
-        ESP_LOGI(TAG, "Connection entry deleted for %d", entry->sock_fd);
-        free(entry);
-        return ESP_OK;
-    } else {
-        return ESP_ERR_NOT_FOUND;
-    }
-}
 
 /**
  * Called when a new connection is opened.
@@ -638,16 +734,13 @@ esp_err_t httpd_init(struct hap_accessory* accessory) {
     s_config.recv_wait_timeout = 10;
     s_config.send_wait_timeout = 10;
     s_config.lru_purge_enable = true;
-    s_config.stack_size = 1024 * 8;
+    s_config.stack_size = 1024 * 7;
     s_config.open_fn = _connection_opened;
     s_config.close_fn = _connection_closed;
 
     // Register listening on wifi start / stop to keep the server up
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &_connect_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &_disconnect_handler, NULL));
-
-    // Allocate receive buffer
-    s_rx_buffer = calloc(1, sizeof(char) * MAX_RX_LEN);
 
     return _start_server();
 }
@@ -663,7 +756,6 @@ void httpd_terminate() {
     ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &_disconnect_handler));
 
     _stop_server();
-    free(s_rx_buffer);
     s_accessory = NULL;
 }
 
