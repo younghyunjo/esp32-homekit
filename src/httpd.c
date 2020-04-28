@@ -4,6 +4,7 @@
 #include "chacha20_poly1305.h"
 #include "accessories.h"
 #include "pairings.h"
+#include <search.h>
 
 #include <esp_wifi.h>
 #include <esp_event.h>
@@ -23,6 +24,7 @@ static httpd_handle_t s_server = NULL;
 
 static struct hap_accessory* s_accessory = NULL;
 
+static SemaphoreHandle_t s_semaphore = NULL;
 static void* s_connections = NULL;
 
 struct connection_entry_t {
@@ -65,7 +67,10 @@ static int _compare(const void *l, const void *r)
 struct connection_entry_t *_get_entry(int sock_fd) {
     struct connection_entry_t key = {0};
     key.sock_fd = sock_fd;
+
+    xSemaphoreTake(s_semaphore, portTICK_PERIOD_MS);
     struct connection_entry_t *entry = *(struct connection_entry_t **) tfind(&key, &s_connections, _compare);
+    xSemaphoreGive(s_semaphore);
     return entry;
 }
 
@@ -409,9 +414,22 @@ static esp_err_t _start_server() {
     return ret;
 }
 
+void _walk_free(void * node, VISIT v, int __unused0) {
+    UNUSED_ARG(v);
+    UNUSED_ARG(__unused0);
+
+    ESP_LOGI(TAG, "Walking connection tree, freeing.");
+    struct connection_entry_t* entry = node;
+    _free_entry(entry);
+}
+
 static void _stop_server() {
     ESP_LOGI(TAG, "Stopping server");
     httpd_stop(&s_server);
+
+    xSemaphoreTake(s_semaphore, portTICK_PERIOD_MS);
+    twalk(&s_connections, _walk_free);
+    xSemaphoreGive(s_semaphore);
 }
 
 static void _disconnect_handler(void *arg, esp_event_base_t event_base,
@@ -686,7 +704,10 @@ esp_err_t _connection_opened(httpd_handle_t hd, int sock_fd) {
         entry->connection = calloc(1, sizeof(struct hap_connection));
         if (entry->connection) {
             ESP_LOGI(TAG, "Connection indexed for %d", entry->sock_fd);
+
+            xSemaphoreTake(s_semaphore, portTICK_PERIOD_MS);
             tsearch(entry, &s_connections, _compare);
+            xSemaphoreGive(s_semaphore);
 
             // Override rx and tx handlers so we can trap encrypt/decrypt and pairing verify status
             httpd_sess_set_recv_override(hd, sock_fd, _receive);
@@ -712,10 +733,14 @@ void _connection_closed(httpd_handle_t hd, int sock_fd) {
     struct connection_entry_t *entry = _get_entry(sock_fd);
     if (entry) {
         assert(entry->sock_fd == sock_fd);
+
+        xSemaphoreTake(s_semaphore, portTICK_PERIOD_MS);
         if (NULL == tdelete(entry, &s_connections, _compare)) {
             ESP_LOGE(TAG, "Could not un-index connection entry for %d.", entry->sock_fd);
         }
         _free_entry(entry);
+        xSemaphoreGive(s_semaphore);
+
     } else{
         ESP_LOGE(TAG, "No matching hap_connection for http close() call.");
     }
@@ -728,6 +753,7 @@ esp_err_t httpd_init(struct hap_accessory* accessory) {
         return -1;
     }
 
+    s_semaphore = xSemaphoreCreateMutex();
     s_accessory = accessory;
 
     s_config.server_port = s_accessory->port;
@@ -757,5 +783,6 @@ void httpd_terminate() {
 
     _stop_server();
     s_accessory = NULL;
+    vSemaphoreDelete(s_semaphore);
 }
 
