@@ -11,7 +11,7 @@ static int _value_length_get(nvs_handle handle, char* key) {
     size_t value_length = 0;
     esp_err_t err = nvs_get_blob (handle, key, NULL, &value_length);
     if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
-        ESP_LOGE(TAG, "nvs_get_blob failed. err:%d\n", err);
+        ESP_LOGE(TAG, "nvs_get_blob failed. err:%d", err);
         nvs_close(handle);
         return 0;
     }
@@ -22,34 +22,34 @@ static int _value_length_get(nvs_handle handle, char* key) {
 int nvs_get(char* key, uint8_t* value, int len)
 {
     if (!key || !value || len == 0) {
-        ESP_LOGE(TAG, "Invalid arguments\n");
+        ESP_LOGE(TAG, "Invalid arguments");
         return -1;
     }
 
     nvs_handle handle;
     esp_err_t err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_open failed. namespace:%s err:%d\n", 
+        ESP_LOGE(TAG, "nvs_open failed. namespace:%s err:%d", 
                 STORAGE_NAMESPACE, err);
         return 0;
     }
 
     int value_length = _value_length_get(handle, key);
     if (value_length == 0) {
-        ESP_LOGD(TAG, "nothing saved. key:%s\n", key);
+        ESP_LOGD(TAG, "nothing saved. key:%s", key);
         nvs_close(handle);
         return 0;
     }
 
     if (value_length > len) {
-        ESP_LOGE(TAG, "value buffer is short\n");
+        ESP_LOGE(TAG, "value buffer is short");
         nvs_close(handle);
         return len - value_length;
     }
 
     err = nvs_get_blob(handle, key, value, (size_t*)&value_length);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_get_blob failed. key:%s err:%d\n", key, err);
+        ESP_LOGE(TAG, "nvs_get_blob failed. key:%s err:%d", key, err);
         nvs_close(handle);
         return 0;
     }
@@ -63,20 +63,20 @@ int nvs_set(char* key, uint8_t* value, int len)
     nvs_handle handle;
     esp_err_t err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_open failed. err:%d\n", err);
+        ESP_LOGE(TAG, "nvs_open failed. err:%d", err);
         return -1;
     }
 
     err = nvs_set_blob(handle, key, value, len);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_set_blob failed. key:%s err:%d\n", key, err);
+        ESP_LOGE(TAG, "nvs_set_blob failed. key:%s err:%d", key, err);
         nvs_close(handle);
         return -1;
     }
 
     err = nvs_commit(handle);
     if (err != ESP_OK)  {
-        ESP_LOGE(TAG, "nvs_commit failed. err:%d\n", err);
+        ESP_LOGE(TAG, "nvs_commit failed. err:%d", err);
         nvs_close(handle);
         return -1;
     }
@@ -90,20 +90,20 @@ int nvs_erase(char* key)
     nvs_handle handle;
     esp_err_t err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_open failed. err:%d\n", err);
+        ESP_LOGE(TAG, "nvs_open failed. err:%d", err);
         return -1;
     }
 
     err = nvs_erase_key(handle, key);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_erase_key failed. key:%s err:%d\n", key, err);
+        ESP_LOGE(TAG, "nvs_erase_key failed. key:%s err:%d", key, err);
         nvs_close(handle);
         return -1;
     }
 
     err = nvs_commit(handle);
     if (err != ESP_OK)  {
-        ESP_LOGE(TAG, "nvs_commit failed. err:%d\n", err);
+        ESP_LOGE(TAG, "nvs_commit failed. err:%d", err);
         nvs_close(handle);
         return -1;
     }
