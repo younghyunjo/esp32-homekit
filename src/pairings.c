@@ -9,8 +9,6 @@
 #include "pair_error.h"
 #include "tlv.h"
 
-#define TAG "hap"
-
 static uint8_t _state_get(uint8_t* device_msg, int device_msg_length)
 {
     struct tlv* state_tlv = tlv_decode((uint8_t*)device_msg, device_msg_length, 

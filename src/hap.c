@@ -37,6 +37,7 @@ static esp_err_t _accessories_get(httpd_req_t *req) {
 
     httpd_resp_set_type(req, "application/hap+json");
     httpd_encrypted_send(req, res_body, body_len);
+    ESP_LOGD(TAG, "Sending accessories %.*s", body_len, res_body); 
 
     free(res_body);
     return ESP_OK;
@@ -58,6 +59,8 @@ static esp_err_t _characteristics_get(httpd_req_t *req) {
         if ( ret == ESP_OK) {
             httpd_resp_set_type(req, "application/hap+json");
             httpd_encrypted_send(req, res_body, body_len);
+        } else {
+            ESP_LOGE(TAG, "Error getting accessories err=%d", ret); 
         }
 
         free(params);

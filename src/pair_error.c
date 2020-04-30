@@ -6,8 +6,6 @@
 #include "hap_internal.h"
 #include "tlv.h"
 
-#define TAG "PAIR_ERROR"
-
 #define CHUNK_RESPONSE_DEFALT_META_LENGTH  16
 
 int pair_error(enum hap_tlv_error_codes error_codes, 
