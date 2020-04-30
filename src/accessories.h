@@ -9,13 +9,11 @@ extern "C" {
  *
  * @param ev
  * @param value
- * @param res_header
- * @param res_header_len
  * @param res_body Must be freed upon making this call.
  * @param res_body_len Must be freed upon making this call.
  */
-void hap_acc_event_response(struct hap_event* ev, void* value,
-        char** res_header, int* res_header_len, char** res_body, int* res_body_len);
+void hap_acc_event_response(void* ev, void* value,
+         char** res_body, int* res_body_len);
 
 /**
  *

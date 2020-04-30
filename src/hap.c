@@ -6,6 +6,8 @@
 #include <cJSON.h>
 #include <esp_log.h>
 #include <esp_http_server.h>
+#include <esp_event_base.h>
+#include <esp_event.h>
 
 #include "advertise.h"
 #include "chacha20_poly1305.h"
@@ -18,291 +20,308 @@
 #include "pair_setup.h"
 #include "pair_verify.h"
 #include "pairings.h"
-#include "httpd.h"
+#include "httpd_encrypted.h"
 
-//#define DEBUG
 
 static bool s_registered = false;
+static httpd_handle_t s_server = NULL;
+static struct hap_accessory* s_accessory = NULL;
 
-static void _plain_msg_recv(void* connection, httpd_req_t* nc, char* msg, int len);
 
-static int _decrypt(struct hap_connection* hc, char* encrypted, int len, char* decrypted, uint8_t** saveptr)
-{
-#define AAD_LENGTH 2
-    uint8_t* ptr;
-    if (*saveptr == NULL) {
-        ptr = (uint8_t*)encrypted;
-    }
-    else if (*saveptr < encrypted + len) {
-        ptr = *saveptr;
-    }
-    else if (*saveptr == encrypted + len){
-        ESP_LOGI(TAG, "_decrypt end %d", (int)((char*)*saveptr - encrypted));
-        return 0;
-    }
-    else {
-        ESP_LOGE(TAG, "BUG? BUG? BUG?");
-        return 0;
-    }
+static esp_err_t _accessories_get(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[GET] accessories");
 
-    int decrypted_len = ptr[1] * 256 + ptr[0];
-    uint8_t nonce[12] = {0,};
-    nonce[4] = hc->decrypt_count % 256;
-    nonce[5] = hc->decrypt_count++ / 256;
+    char* res_body = NULL;
+    int body_len = 0;
+    hap_acc_accessories_do(s_accessory, &res_body, &body_len);
 
-    if (chacha20_poly1305_decrypt_with_nonce(nonce, hc->decrypt_key, ptr, AAD_LENGTH, 
-                ptr+AAD_LENGTH, decrypted_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH, (uint8_t*)decrypted) < 0) {
-        ESP_LOGE(TAG, "chacha20_poly1305_decrypt_with_nonce failed");
-        return 0;
-    }
+    httpd_resp_set_type(req, "application/hap+json");
+    httpd_encrypted_send(req, res_body, body_len);
 
-    *saveptr = ptr + decrypted_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH + AAD_LENGTH;
-
-    return decrypted_len;;
+    free(res_body);
+    return ESP_OK;
 }
 
-static void _encrypted_msg_recv(void* connection, struct httpd_req_t* nc, char* msg, int len) 
-{
-    char* decrypted = calloc(1, len);
-    if (decrypted == NULL) {
-        ESP_LOGE(TAG, "calloc failded. size:%d", len);
+static esp_err_t _characteristics_get(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[GET] characteristics");
+
+    int params_len = httpd_req_get_url_query_len(req) + 1;
+    if (params_len > 0) {
+        char* params = malloc(params_len);
+        httpd_req_get_url_query_str(req, params, params_len);
+        ESP_LOGD(TAG, "[GET] characteristics params: %.*s, len=%d", params_len, params, params_len-1);
+
+        char* res_body = NULL;
+        int body_len = 0;
+
+        int ret = hap_acc_characteristic_get(s_accessory, params, params_len-1, &res_body, &body_len);
+        if ( ret == ESP_OK) {
+            httpd_resp_set_type(req, "application/hap+json");
+            httpd_encrypted_send(req, res_body, body_len);
+        }
+
+        free(params);
+        free(res_body);
+        return ESP_OK;
+    } else {
+        ESP_LOGI(TAG, "Header did not contain 'id' tag");
+        return httpd_encrypted_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+    }
+}
+
+static esp_err_t _characteristics_put(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[PUT] characteristics");
+
+    int ret = ESP_OK;
+    char* res_body = NULL;
+    char* buffer = NULL;
+    int body_len = 0;
+
+    if (req->content_len > MAX_RX_LENGTH) {
+        ESP_LOGE(TAG, "Incoming body content length too long: %d", req->content_len);
+        ret = httpd_encrypted_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        goto done;
+    }
+
+    buffer = calloc(1, req->content_len);
+    if (!buffer) {
+        ESP_LOGE(TAG, "No memory");
+        ret = httpd_encrypted_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, NULL);
+        goto done;
+    }
+
+    int len = httpd_encrypted_recv_body(req, req->content_len, buffer, req->content_len);
+    if (len > 0) {
+        hap_acc_characteristic_put(s_accessory, buffer, len, &res_body, &body_len);
+
+        httpd_resp_set_status(req, "204");
+        httpd_encrypted_send(req, res_body, body_len);
+    } else {
+        ESP_LOGE(TAG, "[PUT] characteristics: Received body length invalid len=%d", len);
+        ret = httpd_encrypted_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+    }
+
+    done:
+    free(buffer);
+    free(res_body);
+    return ret;
+}
+
+static esp_err_t _pairings_put(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[PUT] pairings");
+
+    int ret = ESP_OK;
+    char* res_body = NULL;
+    char* buffer = NULL;
+    int body_len = 0;
+
+    buffer = calloc(1, req->content_len);
+    if (!buffer) {
+        ESP_LOGE(TAG, "No memory");
+        ret = httpd_encrypted_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, NULL);
+        goto done;
+    }
+
+    int len = httpd_encrypted_recv_body(req, req->content_len, buffer, req->content_len);
+    if (len > 0) {
+        pairings_do(s_accessory->iosdevices, buffer, len, &res_body, &body_len);
+
+        httpd_resp_set_type(req, "application/pairing+tlv8");
+        httpd_encrypted_send(req, res_body, body_len);
+    } else {
+        ESP_LOGE(TAG, "[PUT] characteristics: Received body length invalid len=%d", len);
+        ret = httpd_encrypted_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+    }
+
+    done:
+    free(buffer);
+    free(res_body);
+    return ret;
+}
+
+
+static esp_err_t _pair_verify_post(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[POST] pair-verify");
+
+    // Get connection, die hard if if pointer is not valid, it would be a programming error.
+    struct hap_connection *ctx = httpd_encrypted_get_connection(httpd_req_to_sockfd(req));
+
+    int ret = ESP_OK;
+    char* res_body = NULL;
+    char* buffer = NULL;
+    int body_len = 0;
+
+    if (ctx->pair_verified) {
+        ESP_LOGW(TAG, "Already verified");
+        ret = httpd_encrypted_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        goto done;
+    } else if (ctx->pair_verify == NULL) {
+        ESP_LOGI(TAG, "Initiating verification");
+        // Then we must have a valid verify instance
+        ctx->pair_verify = pair_verify_init(
+                s_accessory->id, s_accessory->iosdevices,
+                s_accessory->keys.public, s_accessory->keys.private);
+    }
+
+    buffer = calloc(1, req->content_len);
+    if (!buffer) {
+        ESP_LOGE(TAG, "No memory");
+        ret = httpd_encrypted_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, NULL);
+        goto done;
+    }
+
+    int len = httpd_encrypted_recv_body(req, req->content_len, buffer, req->content_len);
+    if (len <= 0) {
+        ESP_LOGE(TAG, "Received bad length %d", len);
+        ret = httpd_encrypted_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        goto done;
+    }
+
+    int verify_status = pair_verify_do(ctx->pair_verify, buffer, len, &res_body, &body_len, ctx->session_key);
+
+    if (verify_status == 1) {
+        ESP_LOGI(TAG, "Connection verified.");
+
+        hkdf_key_get(HKDF_KEY_TYPE_CONTROL_READ, (uint8_t*)ctx->session_key,
+                     CURVE25519_SECRET_LENGTH, ctx->encrypt_key);
+        hkdf_key_get(HKDF_KEY_TYPE_CONTROL_WRITE, (uint8_t*)ctx->session_key,
+                     CURVE25519_SECRET_LENGTH, ctx->decrypt_key);
+
+        // Clean up, we are done.
+        free(ctx->pair_verify);
+        ctx->pair_verify = NULL;
+    } else if (verify_status < 0) {
+        ESP_LOGE(TAG, "Verification failed.");
+    }
+
+    httpd_resp_set_type(req, "application/pairing+tlv8");
+    httpd_encrypted_send(req, res_body, body_len);
+
+    // Set verified flag after reply is sent
+    ctx->pair_verified = (verify_status == 1);
+
+    done:
+    free(buffer);
+    free(res_body);
+    return ret;
+}
+
+static esp_err_t _pair_setup_post(httpd_req_t *req) {
+    ESP_LOGI(TAG, "[POST] pair-setup");
+
+    int ret = ESP_OK;
+    char* res_body = NULL;
+    char* buffer = NULL;
+    int body_len = 0;
+
+    // Get connection, die hard if if pointer is not valid, it would be a programming error.
+    struct hap_connection *ctx = httpd_encrypted_get_connection(httpd_req_to_sockfd(req));
+
+    if (ctx->pair_setup == NULL) {
+        ctx->pair_setup = pair_setup_init(
+                s_accessory->id, s_accessory->pincode,
+                s_accessory->iosdevices, s_accessory->keys.public, s_accessory->keys.private);
+    }
+
+    buffer = calloc(1, req->content_len);
+    if (!buffer) {
+        ESP_LOGE(TAG, "No memory");
+        ret = httpd_encrypted_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, NULL);
+        goto done;
+    }
+
+    int len = httpd_encrypted_recv_body(req, req->content_len, buffer, req->content_len);
+    if (len <= 0) {
+        ESP_LOGE(TAG, "Received bad length %d", len);
+        ret = httpd_encrypted_send_err(req, HTTPD_400_BAD_REQUEST, NULL);
+        goto done;
+    }
+
+    pair_setup_do(ctx->pair_setup, buffer, len, &res_body, &body_len);
+    httpd_resp_set_type(req, "application/pairing+tlv8");
+    httpd_encrypted_send(req, res_body, body_len);
+
+    done:
+    free(buffer);
+    free(res_body);
+    return ret;
+}
+
+static void _connect_handler(void *arg, esp_event_base_t event_base,
+                             int32_t event_id, void *event_data) {
+    UNUSED_ARG(arg);
+    UNUSED_ARG(event_base);
+    UNUSED_ARG(event_id);
+    UNUSED_ARG(event_data);
+
+    if (s_server != NULL) {
+        ESP_LOGI(TAG, "HTTP server already initialised.");
+        // not yet initialised.
         return;
     }
 
-    struct hap_connection* hc = connection;
-    uint8_t* saveptr = NULL;
-    int decrypted_len = 0;
+    esp_err_t ret = httpd_encrypted_start(&s_server);
 
-    for (decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr); decrypted_len;  decrypted_len = _decrypt(hc, msg, len, decrypted, &saveptr)) {
-        _plain_msg_recv(connection, nc, decrypted, decrypted_len);
-    }
+    if (ret == ESP_OK) {
 
-    free(decrypted);
-}
+        // Set URI handlers
+        ESP_LOGI(TAG, "Registering URI handlers");
 
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/accessories",
+                .method    = HTTP_GET,
+                .handler   = _accessories_get,
+                .user_ctx  = NULL
+        });
 
-static char* _encrypt(struct hap_connection* hc, char* msg, int len, int* encrypted_len)
-{
-#define AAD_LENGTH 2
-    char* encrypted = calloc(1, len + (len / 1024 + 1) * (AAD_LENGTH + CHACHA20_POLY1305_AUTH_TAG_LENGTH) + 1);
-    *encrypted_len = 0;
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/characteristics",
+                .method    = HTTP_GET,
+                .handler   = _characteristics_get,
+                .user_ctx  = NULL
+        });
 
-    uint8_t nonce[12] = {0,};
-    uint8_t* decrypted_ptr = (uint8_t*)msg;
-    uint8_t* encrypted_ptr = (uint8_t*)encrypted;
-    while (len > 0) {
-        int chunk_len = (len < 1024) ? len : 1024;
-        len -= chunk_len;
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/characteristics",
+                .method    = HTTP_PUT,
+                .handler   = _characteristics_put,
+                .user_ctx  = NULL
+        });
 
-        uint8_t aad[AAD_LENGTH];
-        aad[0] = chunk_len % 256;
-        aad[1] = chunk_len / 256;
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/pairings",
+                .method    = HTTP_POST,
+                .handler   = _pairings_put,
+                .user_ctx  = NULL
+        });
 
-        memcpy(encrypted_ptr, aad, AAD_LENGTH);
-        encrypted_ptr += AAD_LENGTH;
-        *encrypted_len += AAD_LENGTH;
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/pair-verify",
+                .method    = HTTP_POST,
+                .handler   = _pair_verify_post,
+                .user_ctx  = NULL
+        });
 
-        nonce[4] = hc->encrypt_count % 256;
-        nonce[5] = hc->encrypt_count++ / 256;
+        httpd_register_uri_handler(s_server, &(httpd_uri_t) {
+                .uri       = "/pair-setup",
+                .method    = HTTP_POST,
+                .handler   = _pair_setup_post,
+                .user_ctx  = NULL
+        });
 
-        chacha20_poly1305_encrypt_with_nonce(nonce, hc->encrypt_key, aad, AAD_LENGTH, decrypted_ptr, chunk_len, encrypted_ptr);
-
-        decrypted_ptr += chunk_len;
-        encrypted_ptr += chunk_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH;
-        *encrypted_len += (chunk_len + CHACHA20_POLY1305_AUTH_TAG_LENGTH);
-    }
-
-    return encrypted;
-}
-
-static void _encrypt_free(char* msg) 
-{
-    if (msg)
-        free(msg);
-}
-
-static void encrypt_send(struct httpd_req_t* nc, struct hap_connection* hc, char* res_header, int header_len, char* body, int body_len)
-{
-    char* plain_text = calloc(1, header_len + body_len + 64);
-    if (res_header)
-        memcpy(plain_text, res_header, header_len);
-
-    if (body)
-        memcpy(plain_text + header_len, body, body_len);
-
-    int encrypted_len = 0;
-
-
-    char* encrypted = _encrypt(hc, plain_text, strlen(plain_text), &encrypted_len);
-
-    free(plain_text);
-
-    //WILLC mg_send(nc, encrypted, encrypted_len);
-
-    _encrypt_free(encrypted);
-}
-
-void _free_response(const char *res_header, const char *res_body) {// Clean up
-    if (res_body != NULL) {
-        free(res_body);
-    }
-    if (res_header != NULL) {
-        free(res_header);
-    }
-}
-
-static void _plain_msg_recv(void* connection, httpd_req_t* nc, char* msg, int len)
-{
-    struct hap_connection* hc = connection;
-    struct hap_accessory* a = hc->a;
-
-    char* res_header = NULL;
-    int res_header_len = 0;
-    char* res_body = NULL;
-    int body_len = 0;
-
-    char* http_raw_msg = msg;
-    int http_raw_msg_len = len;
-    //WILLC mg_parse_http(http_raw_msg, http_raw_msg_len, &hm, 1);
-
-    char addr[32];
-    //WILLC mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr), (unsigned)MG_SOCK_STRINGIFY_IP | (unsigned)MG_SOCK_STRINGIFY_PORT);
-/*
-    ESP_LOGI(TAG, "HTTP request from %s: %.*s %.*s", addr, (int) hm.method.len,
-            hm.method.p, (int) hm.uri.len, hm.uri.p);
-
-
-
-    if (strncmp(hm.uri.p, "/pair-setup", strlen("/pair-setup")) == 0) {
-        if (hc->pair_setup == NULL) {
-            hc->pair_setup = pair_setup_init(a->id, a->pincode, a->iosdevices, a->keys.public, a->keys.private);
-        }
-
-        pair_setup_do(hc->pair_setup, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len);
-
-        if (res_header) {
-            //WILLC mg_send(nc, res_header, res_header_len);
-        }
-
-        if (res_body) {
-            //WILLC mg_send(nc, res_body, body_len);
-        }
-    }
-    else if (strncmp(hm.uri.p, "/pair-verify", hm.uri.len) == 0) {
-        if (hc->pair_verify == NULL) {
-            hc->pair_verify = pair_verify_init(a->id, a->iosdevices, a->keys.public, a->keys.private);
-        }
-
-        pair_verify_do(hc->pair_verify, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len, &hc->pair_verified, hc->session_key);
-
-        if (res_header) {
-            //WILLC mg_send(nc, res_header, res_header_len);
-        }
-
-        if (res_body) {
-            //WILLC mg_send(nc, res_body, body_len);
-        }
-
-        if (hc->pair_verified) {
-            hkdf_key_get(HKDF_KEY_TYPE_CONTROL_READ, (uint8_t*)hc->session_key, CURVE25519_SECRET_LENGTH, hc->encrypt_key);
-            hkdf_key_get(HKDF_KEY_TYPE_CONTROL_WRITE, (uint8_t*)hc->session_key, CURVE25519_SECRET_LENGTH, hc->decrypt_key);
-        }
-
-    }  else if (strncmp(hm.uri.p, "/accessories", hm.uri.len) == 0) {
-
-        hap_acc_accessories_do(a, &res_header, &res_header_len, &res_body, &body_len);
-        encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
-
-    } else if (strncmp(hm.uri.p, "/characteristics", hm.uri.len) == 0) {
-
-        if (strncmp(hm.method.p, "GET", hm.method.len) == 0) {
-            char *query = (char *) hm.query_string.p;
-            int query_len = (int) hm.query_string.len;
-            char *res_header = NULL;
-            int res_header_len = 0;
-            char *res_body = NULL;
-            int body_len = 0;
-
-            hap_acc_characteristic_get(a, query, query_len, &res_header, &res_header_len, &res_body, &body_len);
-            ESP_LOGD(TAG, "------REQUEST-----");
-            ESP_LOGD(TAG, "%.*s", (int)hm.query_string.len, hm.query_string.p);
-            ESP_LOGD(TAG, "------RESPONSE-----");
-            ESP_LOGD(TAG, "%s%s", res_header, res_body);
-
-            if (hc->pair_verified) {
-                encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
-            } else {
-                //WILLC mg_send(hc->nc, res_body, body_len);
-            }
-        } else if (strncmp(hm.method.p, "PUT", hm.method.len) == 0) {
-            hap_acc_characteristic_put(a, (void *) hc, (char *) hm.body.p, hm.body.len, &res_header, &res_header_len,
-                                       &res_body, &body_len);
-            ESP_LOGD(TAG, "------REQUEST-----");
-            ESP_LOGD(TAG, "%.*s", (int)hm.query_string.len, hm.query_string.p);
-            ESP_LOGD(TAG, "%.*s", (int)hm.body.len, (char*)hm.body.p);
-            ESP_LOGD(TAG, "------RESPONSE-----");
-            ESP_LOGD(TAG, "%s", res_header);
-            encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
-        }
-    } else if (strncmp(hm.uri.p, "/pairings", hm.uri.len) == 0) {
-        pairings_do(a->iosdevices, hm.body.p, hm.body.len, &res_header, &res_header_len, &res_body, &body_len);
-        if (res_header) {
-            //WILLC mg_send(nc, res_header, res_header_len);
-        }
-
-        if (res_body) {
-            //WILLC mg_send(nc, res_body, body_len);
-        }
-        encrypt_send(nc, hc, res_header, res_header_len, res_body, body_len);
     } else {
-        ESP_LOGW(TAG, "Unhandled request: %.*s %c%c%c%c",
-                (int) hm.uri.len, hm.uri.p,  hm.uri.p[0], hm.uri.p[1], hm.uri.p[2], hm.uri.p[3]);
-    }
-
-    _free_response(res_header, res_body);
-    */
-}
-
-static void _msg_recv(void* connection, struct httpd_req_t* nc, char* msg, int len)
-{
-    struct hap_connection* hc = connection;
-
-    if (hc->pair_verified) {
-        _encrypted_msg_recv(connection, nc, msg, len);
-    }
-    else {
-        _plain_msg_recv(connection, nc, msg, len);
+        ESP_LOGE(TAG, "Error starting server!");
     }
 }
 
-static void _hap_connection_close(void* connection, struct httpd_req_t* nc)
-{
-    struct hap_connection* hc = connection;
+static void _disconnect_handler(void *arg, esp_event_base_t event_base,
+                                int32_t event_id, void *event_data) {
+    UNUSED_ARG(arg);
+    UNUSED_ARG(event_base);
+    UNUSED_ARG(event_id);
+    UNUSED_ARG(event_data);
 
-
-    if (hc->pair_setup)
-        pair_setup_cleanup(hc->pair_setup);
-
-    if (hc->pair_verify)
-        pair_verify_cleanup(hc->pair_verify);
-
-    ESP_LOGI(TAG, "Resources freed for connection");
-
-    free(hc);
-}
-
-static void _hap_connection_accept(void* accessory, httpd_req_t* nc)
-{
-    struct hap_accessory* a = accessory;
-    struct hap_connection* hc = calloc(1, sizeof(struct hap_connection));
-
-    hc->a = a;
-    hc->pair_verified = false;
-
-
-    //INIT_LIST_HEAD(&hc->event_head);
-    //WILLC nc->user_data = hc;
-
+    httpd_encrypted_stop(s_server);
 }
 
 static void _accessory_ltk_load(struct hap_accessory* a) 
@@ -340,26 +359,18 @@ static void _accessory_ltk_load(struct hap_accessory* a)
 
 int hap_event_response(void* acc_instance, void* ev_handle, void* value)
 {
-    char* res_header = NULL;
-    int res_header_len = 0;
+    if (acc_instance != s_accessory) {
+        ESP_LOGE(TAG, "Unknown accessory instance.");
+        return -1;
+    }
+
     char* res_body = NULL;
     int body_len = 0;
 
+    hap_acc_event_response(ev_handle, value, &res_body, &body_len);
+    httpd_encrypted_broadcast_event(s_server, res_body, body_len);
 
-    hap_acc_event_response(ev_handle, value, &res_header, &res_header_len, &res_body, &body_len);
-
-    struct hap_accessory* a = acc_instance;
-    struct hap_connection* hc;
-
-    // WILLC thread safety required
-//    list_for_each_entry(hc, &a->connections, list) {
-//        encrypt_send(hc->nc, hc, res_header, res_header_len, res_body, body_len);
-//    }
-
-    ESP_LOGI(TAG, "%.*s", res_header_len, res_header);
-    ESP_LOGI(TAG, "%.*s", body_len, res_body);
-
-    _free_response(res_header, res_body);
+    free(res_body);
     return 0;
 }
 
@@ -379,7 +390,7 @@ void hap_service_and_characteristics_add(void* acc_instance, void* acc_obj,
 }
 
 void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,
-                        int port, uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback)
+        uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback)
 {
     if (s_registered) {
         ESP_LOGE(TAG, "Accessory already registered, bailing out");
@@ -398,7 +409,6 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
     strcpy(accessory->pincode, pincode);
     accessory->vendor = strdup(vendor);
     accessory->category = category;
-    accessory->port = port;
     accessory->config_number = config_number;
     accessory->callback = *callback;
     accessory->callback_arg = callback_arg;
@@ -409,10 +419,10 @@ void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, 
     _accessory_ltk_load(accessory);
     accessory->iosdevices = iosdevice_pairings_init(accessory->id);
     accessory->advertise = advertise_accessory_add(accessory->name, accessory->id,
-            accessory->vendor, accessory->port, accessory->config_number, accessory->category,
+            accessory->vendor, httpd_encrypted_get_port(), accessory->config_number, accessory->category,
             ADVERTISE_ACCESSORY_STATE_NOT_PAIRED);
 
-    httpd_init(accessory);
+    s_accessory = accessory;
 
     ESP_LOGI(TAG, "HAP registered");
     s_registered = true;
@@ -433,4 +443,26 @@ void hap_accessory_remove(void* acc_instance) {
 void hap_advertise(void* handle){
     struct hap_accessory* acc = handle;
     advertise_accessory_state(acc->advertise);
+}
+
+void hap_init(int port) {
+    httpd_encrypted_init(port);
+
+    // Register listening on wifi start / stop to keep the server up
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &_connect_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &_disconnect_handler, NULL));
+
+    // Kick off initial registration, it doesn't matter if this one falls through and WIFI is not on yet,
+    // the call back will occur when WiFi is finally up.
+    _connect_handler(NULL, NULL, 0, NULL);
+}
+
+void hap_terminate() {
+    // Unregister listening on wifi start / stop to keep the server up
+    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &_connect_handler));
+    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &_disconnect_handler));
+
+    httpd_encrypted_stop(s_server);
+    httpd_encrypted_terminate(s_server);
+    s_server = NULL;
 }
