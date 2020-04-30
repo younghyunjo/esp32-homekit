@@ -18,7 +18,6 @@
 
 #define HAP_UUID    "%08X-0000-1000-8000-0026BB765291"
 
-#define TAG "accessory"
 
 struct hap_acc_accessory {
     struct list_head list;
@@ -71,14 +70,6 @@ struct hap_attr_characteristic {
     const uint8_t* validValues;
     size_t validValuesSize;
 };
-
-
-static const char* header_event_200_fmt =
-    "Connection: keep-alive\r\n"
-    "EVENT/1.0 200 OK\r\n"
-    "Content-Type: application/hap+json\r\n"
-    "Content-Length: %d\r\n"
-    "\r\n";
 
 static struct hap_attr_characteristic* _attr_character_find(struct list_head* attr_accessories, int aid, int iid)
 {
@@ -406,7 +397,7 @@ int hap_acc_accessories_do(struct hap_accessory* a, char** res_body, int* res_bo
     return 0;
 }
 
-void hap_acc_event_response(void* ev, void* value, char** res_header, int* res_header_len, char** res_body, int* res_body_len)
+void hap_acc_event_response(void* ev, void* value, char** res_body, int* res_body_len)
 {
     struct hap_attr_characteristic* c = ev;
     cJSON* root = cJSON_CreateObject();
@@ -419,10 +410,6 @@ void hap_acc_event_response(void* ev, void* value, char** res_header, int* res_h
     ESP_LOGD(TAG, "Sending JSON payload %s", *res_body);
     *res_body_len = strlen(*res_body);
     cJSON_Delete(root);
-
-    *res_header = calloc(1, strlen(header_event_200_fmt) + 16);
-    sprintf(*res_header, header_event_200_fmt, *res_body_len);
-    *res_header_len = strlen(*res_header);
 }
 
 void* hap_acc_accessory_add(void* acc_instance)

@@ -226,10 +226,14 @@ void hap_service_and_characteristics_add(void* acc_instance, void* accssories_ob
         enum hap_service_type type, struct hap_characteristic* cs, int nr_cs);
 
 void* hap_accessory_register(char* name, char* id, char* pincode, char* vendor, enum hap_accessory_category category,
-                        int port, uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback);
+                         uint32_t config_number, void* callback_arg, hap_accessory_callback_t* callback);
 
 
 void hap_advertise(void* handle);
+
+void hap_init(int port);
+void hap_terminate();
+
 
 
 #ifdef __cplusplus
